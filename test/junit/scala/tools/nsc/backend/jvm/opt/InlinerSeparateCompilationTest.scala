@@ -16,13 +16,12 @@ import AsmUtils._
 import scala.collection.convert.decorateAsScala._
 
 object InlinerSeparateCompilationTest {
-  val args = "-Ybackend:GenBCode -Yopt:l:classpath"
+  val args = "-Yopt:l:classpath"
 }
 
 @RunWith(classOf[JUnit4])
 class InlinerSeparateCompilationTest {
   import InlinerSeparateCompilationTest._
-  import InlinerTest.{listStringLines, assertInvoke, assertNoInvoke}
 
   @Test
   def inlnieMixedinMember(): Unit = {
@@ -44,7 +43,7 @@ class InlinerSeparateCompilationTest {
       """.stripMargin
 
     val warn = "T::f()I is annotated @inline but cannot be inlined: the method is not final and may be overridden"
-    val List(c, o, oMod, t, tCls) = compileClassesSeparately(List(codeA, codeB), args + " -Yopt-warnings", _.msg contains warn)
+    val List(c, o, oMod, t) = compileClassesSeparately(List(codeA, codeB), args + " -Yopt-warnings", _.msg contains warn)
     assertInvoke(getSingleMethod(c, "t1"), "T", "f")
     assertNoInvoke(getSingleMethod(c, "t2"))
     assertNoInvoke(getSingleMethod(c, "t3"))
@@ -64,7 +63,7 @@ class InlinerSeparateCompilationTest {
         |}
       """.stripMargin
 
-    val List(c, t, tCls) = compileClassesSeparately(List(codeA, codeB), args)
+    val List(c, t) = compileClassesSeparately(List(codeA, codeB), args)
     assertNoInvoke(getSingleMethod(c, "t1"))
   }
 
@@ -87,7 +86,7 @@ class InlinerSeparateCompilationTest {
         |}
       """.stripMargin
 
-    val List(c, t, tCls, u, uCls) = compileClassesSeparately(List(codeA, codeB), args)
+    val List(c, t, u) = compileClassesSeparately(List(codeA, codeB), args)
     for (m <- List("t1", "t2", "t3")) assertNoInvoke(getSingleMethod(c, m))
   }
 
@@ -108,8 +107,8 @@ class InlinerSeparateCompilationTest {
          |$assembly
       """.stripMargin
 
-    val List(a, aCls, t, tCls) = compileClassesSeparately(List(codeA, assembly), args)
-    assertNoInvoke(getSingleMethod(tCls, "f"))
-    assertNoInvoke(getSingleMethod(aCls, "n"))
+    val List(a, t) = compileClassesSeparately(List(codeA, assembly), args)
+    assertNoInvoke(getSingleMethod(t, "f"))
+    assertNoInvoke(getSingleMethod(a, "n"))
   }
 }

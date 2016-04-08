@@ -6,11 +6,12 @@
 package scala.tools.nsc
 package io
 
-import java.io.{ InputStream, OutputStream, IOException, FileNotFoundException, FileInputStream, DataOutputStream }
+import scala.language.postfixOps
+
+import java.io.{ InputStream, OutputStream, DataOutputStream }
 import java.util.jar._
 import scala.collection.JavaConverters._
 import Attributes.Name
-import scala.language.{ implicitConversions, postfixOps }
 
 // Attributes.Name instances:
 //
@@ -154,7 +155,7 @@ object Jar {
     def update(key: Attributes.Name, value: String) = attrs.put(key, value)
   }
 
-  // See http://download.java.net/jdk7/docs/api/java/nio/file/Path.html
+  // See http://docs.oracle.com/javase/7/docs/api/java/nio/file/Path.html
   // for some ideas.
   private val ZipMagicNumber = List[Byte](80, 75, 3, 4)
   private def magicNumberIsZip(f: Path) = f.isFile && (f.toFile.bytes().take(4).toList == ZipMagicNumber)

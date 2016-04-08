@@ -10,7 +10,7 @@ import scala.tools.nsc.io.AbstractFile
 import scala.tools.nsc.util.FailedInterrupt
 import scala.tools.nsc.util.EmptyAction
 import scala.tools.nsc.util.WorkScheduler
-import scala.reflect.internal.util.{SourceFile, Position}
+import scala.reflect.internal.util.SourceFile
 import scala.tools.nsc.util.InterruptReq
 
 /** Interface of interactive compiler to a client such as an IDE
@@ -189,7 +189,7 @@ trait CompilerControl { self: Global =>
    * continues with current pass.
    * Waits until source is fully type checked and returns body in response.
    * @param source     The source file that needs to be fully typed.
-   * @param keepLoaded Whether to keep that file in the PC if it was not loaded before. If 
+   * @param keepLoaded Whether to keep that file in the PC if it was not loaded before. If
                        the file is already loaded, this flag is ignored.
    * @param response   The response, which is set to the fully attributed tree of `source`.
    *                   If the unit corresponding to `source` has been removed in the meantime
@@ -268,10 +268,12 @@ trait CompilerControl { self: Global =>
   /** Info given for every member found by completion
    */
   abstract class Member {
+    def prefix: Type
     val sym: Symbol
     val tpe: Type
     val accessible: Boolean
     def implicitlyAdded = false
+    def symNameDropLocal: Name = sym.name.dropLocal
 
     private def accessible_s = if (accessible) "" else "[inaccessible] "
     def forceInfoString = {
@@ -288,6 +290,8 @@ trait CompilerControl { self: Global =>
     accessible: Boolean,
     inherited: Boolean,
     viaView: Symbol) extends Member {
+    // should be a case class parameter, but added as a var instead to preserve compatibility with the IDE
+    var prefix: Type = NoType
     override def implicitlyAdded = viaView != NoSymbol
   }
 
@@ -295,7 +299,10 @@ trait CompilerControl { self: Global =>
     sym: Symbol,
     tpe: Type,
     accessible: Boolean,
-    viaImport: Tree) extends Member
+    viaImport: Tree) extends Member {
+    // should be a case class parameter, but added as a var instead to preserve compatibility with the IDE
+    var prefix: Type = NoType
+  }
 
   // items that get sent to scheduler
 

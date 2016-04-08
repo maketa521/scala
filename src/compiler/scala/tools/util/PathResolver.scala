@@ -12,10 +12,8 @@ import scala.tools.reflect.WrappedProperties.AccessControl
 import scala.tools.nsc.Settings
 import scala.tools.nsc.util.{ ClassFileLookup, ClassPath, JavaClassPath }
 import scala.reflect.io.{ File, Directory, Path, AbstractFile }
-import scala.reflect.runtime.ReflectionUtils
-import ClassPath.{ JavaContext, DefaultJavaContext, join, split }
+import ClassPath.{ JavaContext, DefaultJavaContext, split }
 import PartialFunction.condOpt
-import scala.language.postfixOps
 import scala.tools.nsc.classpath.{ AggregateFlatClassPath, ClassPathFactory, FlatClassPath, FlatClassPathFactory }
 import scala.tools.nsc.settings.ClassPathRepresentationType
 
@@ -166,12 +164,6 @@ object PathResolver {
       |}""".asLines
   }
 
-  // used in PathResolver constructor
-  private object NoImplClassJavaContext extends JavaContext {
-    override def isValidName(name: String): Boolean =
-      !ReflectionUtils.scalacShouldntLoadClassfile(name)
-  }
-
   @deprecated("This method is no longer used be scalap and will be deleted", "2.11.5")
   def fromPathString(path: String, context: JavaContext = DefaultJavaContext): JavaClassPath = {
     val s = new Settings()
@@ -312,10 +304,7 @@ abstract class PathResolverBase[BaseClassPathType <: ClassFileLookup[AbstractFil
 class PathResolver(settings: Settings, context: JavaContext)
   extends PathResolverBase[ClassPath[AbstractFile], JavaClassPath](settings, context) {
 
-  def this(settings: Settings) =
-    this(settings,
-      if (settings.YnoLoadImplClass) PathResolver.NoImplClassJavaContext
-      else DefaultJavaContext)
+  def this(settings: Settings) = this(settings, DefaultJavaContext)
 
   override protected def computeResult(): JavaClassPath =
     new JavaClassPath(containers.toIndexedSeq, context)

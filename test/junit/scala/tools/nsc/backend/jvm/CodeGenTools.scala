@@ -48,11 +48,13 @@ object CodeGenTools {
     resetOutput(compiler)
     compiler
   }
-  
+
   def newCompilerWithoutVirtualOutdir(defaultArgs: String = "-usejavacp", extraArgs: String = ""): Global = {
-    val settings = new Settings()
+    def showError(s: String) = throw new Exception(s)
+    val settings = new Settings(showError)
     val args = (CommandLineParser tokenize defaultArgs) ++ (CommandLineParser tokenize extraArgs)
-    settings.processArguments(args, processAll = true)
+    val (_, nonSettingsArgs) = settings.processArguments(args, processAll = true)
+    if (nonSettingsArgs.nonEmpty) showError("invalid compiler flags: " + nonSettingsArgs.mkString(" "))
     new Global(settings, new StoreReporter)
   }
 
@@ -90,6 +92,23 @@ object CodeGenTools {
     val run = newRun(compiler)
     run.compileSources(makeSourceFile(scalaCode, "unitTestSource.scala") :: javaCode.map(p => makeSourceFile(p._1, p._2)))
     checkReport(compiler, allowMessage)
+    getGeneratedClassfiles(compiler.settings.outputDirs.getSingleOutput.get)
+  }
+
+  def compileTransformed(compiler: Global)(scalaCode: String, javaCode: List[(String, String)] = Nil, beforeBackend: compiler.Tree => compiler.Tree): List[(String, Array[Byte])] = {
+    compiler.settings.stopBefore.value = "jvm" :: Nil
+    val run = newRun(compiler)
+    import compiler._
+    val scalaUnit = newCompilationUnit(scalaCode, "unitTestSource.scala")
+    val javaUnits = javaCode.map(p => newCompilationUnit(p._1, p._2))
+    val units = scalaUnit :: javaUnits
+    run.compileUnits(units, run.parserPhase)
+    compiler.settings.stopBefore.value = Nil
+    scalaUnit.body = beforeBackend(scalaUnit.body)
+    checkReport(compiler, _ => false)
+    val run1 = newRun(compiler)
+    run1.compileUnits(units, run1.phaseNamed("jvm"))
+    checkReport(compiler, _ => false)
     getGeneratedClassfiles(compiler.settings.outputDirs.getSingleOutput.get)
   }
 
@@ -145,12 +164,53 @@ object CodeGenTools {
     convertMethod(m)
   }
 
+  def assertSameCode(method: Method, expected: List[Instruction]): Unit = assertSameCode(method.instructions.dropNonOp, expected)
   def assertSameCode(actual: List[Instruction], expected: List[Instruction]): Unit = {
-    assertTrue(s"\nExpected: $expected\nActual  : $actual", actual === expected)
+    assert(actual === expected, s"\nExpected: $expected\nActual  : $actual")
+  }
+
+  def assertSameSummary(method: Method, expected: List[Any]): Unit = assertSameSummary(method.instructions, expected)
+  def assertSameSummary(actual: List[Instruction], expected: List[Any]): Unit = {
+    def expectedString = expected.map({
+      case s: String => s""""$s""""
+      case i: Int => opcodeToString(i, i)
+    }).mkString("List(", ", ", ")")
+    assert(actual.summary == expected, s"\nFound   : ${actual.summaryText}\nExpected: $expectedString")
+  }
+
+  def assertNoInvoke(m: Method): Unit = assertNoInvoke(m.instructions)
+  def assertNoInvoke(ins: List[Instruction]): Unit = {
+    assert(!ins.exists(_.isInstanceOf[Invoke]), ins.stringLines)
+  }
+
+  def assertInvoke(m: Method, receiver: String, method: String): Unit = assertInvoke(m.instructions, receiver, method)
+  def assertInvoke(l: List[Instruction], receiver: String, method: String): Unit = {
+    assert(l.exists {
+      case Invoke(_, `receiver`, `method`, _, _) => true
+      case _ => false
+    }, l.stringLines)
+  }
+
+  def assertDoesNotInvoke(m: Method, method: String): Unit = assertDoesNotInvoke(m.instructions, method)
+  def assertDoesNotInvoke(l: List[Instruction], method: String): Unit = {
+    assert(!l.exists {
+      case i: Invoke => i.name == method
+      case _ => false
+    }, l.stringLines)
+  }
+
+  def assertInvokedMethods(m: Method, expected: List[String]): Unit = assertInvokedMethods(m.instructions, expected)
+  def assertInvokedMethods(l: List[Instruction], expected: List[String]): Unit = {
+    def quote(l: List[String]) = l.map(s => s""""$s"""").mkString("List(", ", ", ")")
+    val actual = l collect { case i: Invoke => i.owner + "." + i.name }
+    assert(actual == expected, s"\nFound   : ${quote(actual)}\nExpected: ${quote(expected)}")
   }
 
   def getSingleMethod(classNode: ClassNode, name: String): Method =
     convertMethod(classNode.methods.asScala.toList.find(_.name == name).get)
+
+  def findAsmMethods(c: ClassNode, p: String => Boolean) = c.methods.iterator.asScala.filter(m => p(m.name)).toList.sortBy(_.name)
+  def findAsmMethod(c: ClassNode, name: String) = findAsmMethods(c, _ == name).head
 
   /**
    * Instructions that match `query` when textified.
@@ -159,7 +219,7 @@ object CodeGenTools {
   def findInstr(method: MethodNode, query: String): List[AbstractInsnNode] = {
     val useNext = query(0) == '+'
     val instrPart = if (useNext) query.drop(1) else query
-    val insns = method.instructions.iterator.asScala.find(i => textify(i) contains instrPart).toList
+    val insns = method.instructions.iterator.asScala.filter(i => textify(i) contains instrPart).toList
     if (useNext) insns.map(_.getNext) else insns
   }
 
@@ -174,5 +234,9 @@ object CodeGenTools {
 
   implicit class MortalInstruction(val ins: Instruction) extends AnyVal {
     def dead: (Instruction, Boolean) = (ins, false)
+  }
+
+  implicit class listStringLines[T](val l: List[T]) extends AnyVal {
+    def stringLines = l.mkString("\n")
   }
 }

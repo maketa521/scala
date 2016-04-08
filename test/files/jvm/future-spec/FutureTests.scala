@@ -37,7 +37,7 @@ class FutureTests extends MinimalScalaTest {
   "A future with custom ExecutionContext" should {
     "shouldHandleThrowables" in {
       val ms = new mutable.HashSet[Throwable] with mutable.SynchronizedSet[Throwable]
-      implicit val ec = scala.concurrent.ExecutionContext.fromExecutor(new scala.concurrent.forkjoin.ForkJoinPool(), {
+      implicit val ec = scala.concurrent.ExecutionContext.fromExecutor(new java.util.concurrent.ForkJoinPool(), {
         t =>
         ms += t
       })
@@ -238,7 +238,7 @@ class FutureTests extends MinimalScalaTest {
     "support pattern matching within a for-comprehension" in {
       case class Req[T](req: T)
       case class Res[T](res: T)
-      def async[T](req: Req[T]) = req match {
+      def async[T](req: Req[T]) = (req: @unchecked) match {
         case Req(s: String) => Future { Res(s.length) }
         case Req(i: Int)    => Future { Res((i * 2).toString) }
       }

@@ -10,13 +10,11 @@ package scala.tools.ant
 
 import java.io.{File, PrintWriter, BufferedWriter, FileWriter}
 
-import org.apache.tools.ant.{ BuildException, Project, AntClassLoader }
+import org.apache.tools.ant.{ Project, AntClassLoader}
 import org.apache.tools.ant.taskdefs.Java
 import org.apache.tools.ant.types.{Path, Reference}
-import org.apache.tools.ant.util.{FileUtils, GlobPatternMapper,
-                                  SourceFileScanner, facade}
-import org.apache.tools.ant.util.facade.{FacadeTaskHelper,
-                                  ImplementationSpecificArgument}
+import org.apache.tools.ant.util.{FileUtils, GlobPatternMapper, SourceFileScanner}
+import org.apache.tools.ant.util.facade.{FacadeTaskHelper, ImplementationSpecificArgument}
 
 import scala.tools.nsc.{Global, Settings, CompilerCommand}
 import scala.tools.nsc.io.{Path => SPath}
@@ -91,8 +89,8 @@ class Scalac extends ScalaMatchingTask with ScalacShared {
     val values = List("namer", "typer", "pickler", "refchecks",
                       "uncurry", "tailcalls", "specialize", "explicitouter",
                       "erasure", "lazyvals", "lambdalift", "constructors",
-                      "flatten", "mixin", "delambdafy", "cleanup", "icode", "inliner",
-                      "closelim", "dce", "jvm", "terminal")
+                      "flatten", "mixin", "delambdafy", "cleanup",
+                      "jvm", "terminal")
   }
 
   /** Defines valid values for the `target` property. */
@@ -131,7 +129,7 @@ class Scalac extends ScalaMatchingTask with ScalacShared {
   /** The character encoding of the files to compile. */
   protected var encoding: Option[String] = None
 
-  // the targetted backend
+  // the targeted backend
   protected var backend: Option[String] = None
 
   /** Whether to force compilation of all files or not. */
@@ -553,7 +551,7 @@ class Scalac extends ScalaMatchingTask with ScalacShared {
         val str =
           if (javaFiles.isEmpty) "%d source file%s".format(list.length, plural(list))
           else "%d scala and %d java source files".format(scalaFiles.length, javaFiles.length)
-        log("Compiling %s to %s".format(str, getDestination.toString))
+        log(s"Compiling $str to $getDestination")
       }
       else log("No files selected for compilation", Project.MSG_VERBOSE)
 

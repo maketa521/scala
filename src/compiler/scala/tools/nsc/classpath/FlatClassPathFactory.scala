@@ -3,9 +3,9 @@
  */
 package scala.tools.nsc.classpath
 
+import scala.reflect.io.VirtualDirectory
 import scala.tools.nsc.Settings
 import scala.tools.nsc.io.AbstractFile
-import scala.tools.nsc.util.ClassPath
 import FileUtils.AbstractFileOps
 
 /**
@@ -13,16 +13,9 @@ import FileUtils.AbstractFileOps
  * it uses proper type of classpath depending on a types of particular files containing sources or classes.
  */
 class FlatClassPathFactory(settings: Settings) extends ClassPathFactory[FlatClassPath] {
+  def newClassPath(file: AbstractFile): FlatClassPath = FlatClassPathFactory.newClassPath(file, settings)
 
-  override def newClassPath(file: AbstractFile): FlatClassPath =
-    if (file.isJarOrZip)
-      ZipAndJarFlatClassPathFactory.create(file, settings)
-    else if (file.isDirectory)
-      new DirectoryFlatClassPath(file.file)
-    else
-      sys.error(s"Unsupported classpath element: $file")
-
-  override def sourcesInPath(path: String): List[FlatClassPath] =
+  def sourcesInPath(path: String): List[FlatClassPath] =
     for {
       file <- expandPath(path, expandStar = false)
       dir <- Option(AbstractFile getDirectory file)
@@ -35,4 +28,17 @@ class FlatClassPathFactory(settings: Settings) extends ClassPathFactory[FlatClas
       new DirectoryFlatSourcePath(file.file)
     else
       sys.error(s"Unsupported sourcepath element: $file")
+}
+
+object FlatClassPathFactory {
+  def newClassPath(file: AbstractFile, settings: Settings): FlatClassPath = file match {
+    case vd: VirtualDirectory => VirtualDirectoryFlatClassPath(vd)
+    case _ =>
+      if (file.isJarOrZip)
+        ZipAndJarFlatClassPathFactory.create(file, settings)
+      else if (file.isDirectory)
+        new DirectoryFlatClassPath(file.file)
+      else
+        sys.error(s"Unsupported classpath element: $file")
+  }
 }

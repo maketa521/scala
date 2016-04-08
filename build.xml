@@ -165,7 +165,6 @@ TODO:
   <property name="build.dir"               value="${basedir}/build"/>
   <property name="build-deps.dir"          value="${build.dir}/deps"/>
   <property name="build-libs.dir"          value="${build.dir}/libs"/>
-  <property name="build-forkjoin.dir"      value="${build-libs.dir}"/>
   <property name="build-locker.dir"        value="${build.dir}/locker"/>
   <property name="build-quick.dir"         value="${build.dir}/quick"/>
   <property name="build-pack.dir"          value="${build.dir}/pack"/>
@@ -184,7 +183,7 @@ TODO:
 
   <property name="dists.dir"               value="${basedir}/dists"/>
 
-  <property name="copyright.string"        value="Copyright 2002-2013, LAMP/EPFL"/>
+  <property name="copyright.string"        value="Copyright 2002-2016, LAMP/EPFL"/>
 
   <!-- These are NOT the flags used to run SuperSabbus, but the ones written
        into the script runners created with scala.tools.ant.ScalaTool -->
@@ -271,7 +270,7 @@ TODO:
       </artifact:dependencies>
 
       <artifact:dependencies pathId="jarjar.classpath">
-        <dependency groupId="com.googlecode.jarjar" artifactId="jarjar" version="1.3"/>
+        <dependency groupId="org.pantsbuild" artifactId="jarjar" version="1.6.0"/>
       </artifact:dependencies>
 
       <!-- JUnit -->
@@ -455,9 +454,14 @@ TODO:
     </condition>
 
     <fail if="has.unsupported.jdk" message="JDK ${ant.java.version} is not supported by this build!"/>
+    <fail message="Ant 1.9+ required">
+      <condition>
+        <not><antversion atleast="1.9" /></not>
+      </condition>
+    </fail>
 
     <!-- Allow this to be overridden simply -->
-    <property name="sbt.latest.version"    value="0.12.4"/>
+    <property name="sbt.latest.version"    value="0.13.11"/>
 
     <property name="sbt.src.dir"           value="${build-sbt.dir}/${sbt.latest.version}/src"/>
     <property name="sbt.lib.dir"           value="${build-sbt.dir}/${sbt.latest.version}/lib"/>
@@ -465,7 +469,7 @@ TODO:
     <property name="sbt.interface.jar"     value="${sbt.lib.dir}/interface.jar"/>
     <property name="sbt.interface.url"     value="http://dl.bintray.com/typesafe/ivy-releases/org.scala-sbt/interface/${sbt.latest.version}/jars/interface.jar"/>
     <property name="sbt.interface.src.jar" value="${sbt.src.dir}/compiler-interface-src.jar"/>
-    <property name="sbt.interface.src.url" value="http://dl.bintray.com/typesafe/ivy-releases/org.scala-sbt/compiler-interface/${sbt.latest.version}/jars/compiler-interface-src.jar"/>
+    <property name="sbt.interface.src.url" value="http://dl.bintray.com/typesafe/ivy-releases/org.scala-sbt/compiler-interface/${sbt.latest.version}/srcs/compiler-interface-sources.jar"/>
 
 
     <!-- Additional command line arguments for scalac. They are added to all build targets -->
@@ -478,6 +482,8 @@ TODO:
     <property name="scalac.args.locker"    value="${scalac.args.all}"/>
     <property name="scalac.args.quick"     value="${scalac.args.all}"/>
     <property name="scalac.args.strap"     value="${scalac.args.quick}"/>
+
+    <property name="partest.scalac_opts"   value=""/> <!-- set default value, otherwise the property name will be passed to partest if undefined -->
 
     <!-- This is the start time for the distribution -->
     <tstamp prefix="time">
@@ -570,9 +576,6 @@ TODO:
       </propertyfile>
     </then></if>
 
-    <path id="forkjoin.classpath" path="${build-forkjoin.dir}/classes/forkjoin"/>
-    <property name="forkjoin-classes" refid="forkjoin.classpath"/>
-
     <!-- the following properties fully define staged-docs, staged-pack, make-bundle, copy-bundle and mvn-package for each of the projects -->
     <property name="library.description"           value="Scala Standard Library"/>
     <property name="library.docroot"               value="rootdoc.txt"/>
@@ -627,7 +630,7 @@ TODO:
     <property name="partest-extras.description"    value="Scala Compiler Testing Tool (compiler-specific extras)"/>
     <property name="partest-javaagent.description" value="Scala Compiler Testing Tool (compiler-specific java agent)"/>
 
-    <!-- projects without project-specific options: forkjoin, manual, bin, repl -->
+    <!-- projects without project-specific options: manual, bin, repl -->
     <for list="compiler,interactive,scaladoc,library,parser-combinators,partest,partest-extras,partest-javaagent,reflect,scalap,swing,xml,repl-jline" param="project">
       <sequential>
         <!-- description is mandatory -->
@@ -685,7 +688,6 @@ TODO:
     <!-- LOCKER -->
     <path id="locker.library.build.path">
       <pathelement location="${build-locker.dir}/classes/library"/>
-      <path refid="forkjoin.classpath"/>
       <path refid="aux.libs"/>
     </path>
 
@@ -706,7 +708,6 @@ TODO:
     <!-- QUICK -->
     <path id="quick.library.build.path">
       <pathelement location="${build-quick.dir}/classes/library"/>
-      <path refid="forkjoin.classpath"/>
       <path refid="aux.libs"/>
     </path>
 
@@ -723,6 +724,7 @@ TODO:
 
     <path id="quick.repl.build.path">
       <path refid="quick.compiler.build.path"/>
+      <path refid="quick.interactive.build.path"/>
       <pathelement location="${build-quick.dir}/classes/repl"/>
     </path>
 
@@ -769,7 +771,7 @@ TODO:
     </path>
 
     <path id="quick.bin.tool.path">
-      <path refid="quick.repl.build.path"/>
+      <path refid="quick.repl-jline.build.path"/>
       <pathelement location="${build-quick.dir}/classes/scalap"/>
       <pathelement location="${build-quick.dir}/classes/scaladoc"/>
       <path refid="external-modules-nocore"/>
@@ -781,7 +783,6 @@ TODO:
       <pathelement location="${reflect.jar}"/>
       <pathelement location="${compiler.jar}"/>
       <pathelement location="${ant.jar}"/>
-      <path refid="forkjoin.classpath"/>
       <path refid="aux.libs"/>
     </path>
 
@@ -799,7 +800,6 @@ TODO:
 
     <path id="pack.library.files">
       <fileset dir="${build-quick.dir}/classes/library"/>
-      <fileset dir="${forkjoin-classes}"/>
     </path>
 
     <path id="pack.repl-jline.files">    <fileset dir="${build-quick.dir}/classes/repl-jline"/> </path>
@@ -829,7 +829,6 @@ TODO:
     <!-- STRAP -->
     <path id="strap.library.build.path">
       <pathelement location="${build-strap.dir}/classes/library"/>
-      <path refid="forkjoin.classpath"/>
       <path refid="aux.libs"/>
     </path>
 
@@ -958,7 +957,6 @@ TODO:
       <pathelement location="${build-osgi.dir}/org.scala-lang.scala-reflect.jar"/>
       <pathelement location="${build-osgi.dir}/org.scala-lang.scala-compiler.jar"/>
       <path refid="pax.exam.classpath"/>
-      <path refid="forkjoin.classpath"/>
     </path>
 
     <path id="test.osgi.compiler.build.path.felix">
@@ -1000,10 +998,14 @@ TODO:
       <include name="**/*.png"/>
       <include name="**/*.gif"/>
       <include name="**/*.txt"/>
+      <include name="**/*.eot"/>
+      <include name="**/*.ttf"/>
+      <include name="**/*.woff"/>
+      <include name="**/*.svg"/>
     </patternset>
 
     <taskdef resource="scala/tools/ant/sabbus/antlib.xml" classpathref="starr.compiler.path"/>
-    <taskdef name="jarjar" classname="com.tonicsystems.jarjar.JarJarTask" classpathref="jarjar.classpath" />
+    <taskdef name="jarjar" classname="org.pantsbuild.jarjar.JarJarTask" classpathref="jarjar.classpath" />
   </target>
 
 <!-- ===========================================================================
@@ -1029,8 +1031,6 @@ TODO:
                                   LOCAL DEPENDENCIES
 ============================================================================ -->
 
-  <target name="forkjoin.done" depends="init"> <simple-javac project="forkjoin" args="-XDignore.symbol.file" jar="no"/></target>
-
   <!-- For local development only. We only allow released versions of Scala for STARR.
     This builds quick (core only) and publishes it with a generated version number,
     saving it as starr.version in build.properties, so this compiler will be used as STARR in your next build
@@ -1051,7 +1051,7 @@ TODO:
 <!-- ===========================================================================
                                   LOCAL REFERENCE BUILD (LOCKER)
 ============================================================================ -->
-  <target name="locker.start"  depends="forkjoin.done">
+  <target name="locker.start"  depends="init">
     <condition property="locker.locked"><available file="${build-locker.dir}/locker.locked"/></condition></target>
 
   <target name="locker.lib"    depends="locker.start"     unless="locker.locked">
@@ -1086,7 +1086,7 @@ TODO:
   <target name="quick.comp"       depends="quick.reflect">
     <staged-build with="locker"   stage="quick" project="compiler"/> </target>
 
-  <target name="quick.repl"       depends="quick.comp">
+  <target name="quick.repl"       depends="quick.comp, quick.interactive">
     <staged-build with="locker"   stage="quick" project="repl"/>
     <staged-build with="locker"   stage="quick" project="repl-jline"/>
 
@@ -1114,7 +1114,7 @@ TODO:
   </target>
 
   <target name="quick.scaladoc"   depends="quick.comp">
-    <staged-build with="locker"   stage="quick" project="scaladoc" version="scaladoc"/> </target>
+    <staged-build with="locker"   stage="quick" project="scaladoc"/> </target>
 
   <target name="quick.interactive" depends="quick.comp, quick.scaladoc">
     <staged-build with="locker"    stage="quick" project="interactive"/> </target>
@@ -1137,7 +1137,7 @@ TODO:
 <!-- ===========================================================================
                                   PACKED QUICK BUILD (PACK)
 ============================================================================ -->
-  <target name="pack.lib"    depends="quick.lib, forkjoin.done"> <staged-pack project="library"/></target>
+  <target name="pack.lib"    depends="quick.lib"> <staged-pack project="library"/></target>
 
   <target name="pack.reflect" depends="quick.reflect"> <staged-pack project="reflect"/> </target>
 
@@ -1543,7 +1543,7 @@ TODO:
     <mkdir dir="${bc-build.dir}"/>
     <!-- Pull down MIMA -->
     <artifact:dependencies pathId="mima.classpath">
-      <dependency groupId="com.typesafe" artifactId="mima-reporter_2.10" version="0.1.6"/>
+      <dependency groupId="com.typesafe" artifactId="mima-reporter_2.10" version="0.1.8"/>
     </artifact:dependencies>
     <artifact:dependencies pathId="old.bc.classpath">
       <dependency groupId="org.scala-lang" artifactId="scala-library" version="${bc-reference-version}"/>
@@ -1586,20 +1586,15 @@ TODO:
   <target name="docs.lib" depends="docs.start" unless="docs.skip">
     <staged-docs project="library">
       <include name="**/*.scala"/>
-      <exclude name="runtime/*$.scala"/>
-      <exclude name="runtime/ScalaRunTime.scala"/>
-      <exclude name="runtime/StringAdd.scala"/>
+      <exclude name="**/runtime/*$.scala"/>
+      <exclude name="**/runtime/ScalaRunTime.scala"/>
+      <exclude name="**/runtime/StringAdd.scala"/>
     </staged-docs>
   </target>
 
   <target name="docs.reflect" depends="docs.start" unless="docs.skip">
     <staged-docs project="reflect">
       <include name="**/*.scala"/>
-      <exclude name="reflect/Code.scala"/>
-      <exclude name="reflect/Print.scala"/>
-      <exclude name="reflect/Symbol.scala"/>
-      <exclude name="reflect/Tree.scala"/>
-      <exclude name="reflect/Type.scala"/>
     </staged-docs>
   </target>
 
@@ -1673,6 +1668,10 @@ TODO:
         <include name="**/*.css"/>
         <include name="**/*.gif"/>
         <include name="**/*.png"/>
+        <include name="**/*.eot"/>
+        <include name="**/*.ttf"/>
+        <include name="**/*.woff"/>
+        <include name="**/*.svg"/>
       </fileset>
     </copy>
   </target>

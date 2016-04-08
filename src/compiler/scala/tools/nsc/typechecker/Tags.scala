@@ -13,16 +13,7 @@ trait Tags {
     private val runDefinitions = currentRun.runDefinitions
 
     private def resolveTag(pos: Position, taggedTp: Type, allowMaterialization: Boolean) = enteringTyper {
-      def wrapper (tree: => Tree): Tree = if (allowMaterialization) (context.withMacrosEnabled[Tree](tree)) else (context.withMacrosDisabled[Tree](tree))
-      wrapper(inferImplicit(
-        EmptyTree,
-        taggedTp,
-        reportAmbiguous = true,
-        isView = false,
-        context,
-        saveAmbiguousDivergent = true,
-        pos
-      ).tree)
+      context.withMacros(enabled = allowMaterialization) { inferImplicitByType(taggedTp, context, pos).tree }
     }
 
     /** Finds in scope or materializes a ClassTag.
@@ -36,7 +27,7 @@ trait Tags {
      *  @param   allowMaterialization   If true (default) then the resolver is allowed to launch materialization macros when there's no class tag in scope.
      *                                  If false then materialization macros are prohibited from running.
      *
-     *  @returns Tree that represents an `scala.reflect.ClassTag` for `tp` if everything is okay.
+     *  @return  Tree that represents an `scala.reflect.ClassTag` for `tp` if everything is okay.
      *           EmptyTree if the result contains unresolved (i.e. not spliced) type parameters and abstract type members.
      *           EmptyTree if `allowMaterialization` is false, and there is no class tag in scope.
      */
@@ -57,7 +48,7 @@ trait Tags {
      *  @param   allowMaterialization   If true (default) then the resolver is allowed to launch materialization macros when there's no type tag in scope.
      *                                  If false then materialization macros are prohibited from running.
      *
-     *  @returns Tree that represents a `scala.reflect.TypeTag` for `tp` if everything is okay.
+     *  @return  Tree that represents a `scala.reflect.TypeTag` for `tp` if everything is okay.
      *           EmptyTree if `concrete` is true and the result contains unresolved (i.e. not spliced) type parameters and abstract type members.
      *           EmptyTree if `allowMaterialization` is false, and there is no array tag in scope.
      */

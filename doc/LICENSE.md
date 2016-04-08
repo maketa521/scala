@@ -2,9 +2,9 @@ Scala is licensed under the [BSD 3-Clause License](http://opensource.org/license
 
 ## Scala License
 
-Copyright (c) 2002-2013 EPFL
+Copyright (c) 2002-2016 EPFL
 
-Copyright (c) 2011-2013 Typesafe, Inc.
+Copyright (c) 2011-2016 Lightbend, Inc.
 
 All rights reserved.
 
@@ -56,13 +56,5 @@ This license is used by the following third-party libraries:
 This license is used by the following third-party libraries:
 
   * jquery
-  * jquery-ui
-  * jquery-layout
   * sizzle
   * tools tooltip
-
-### Public Domain
-The following libraries are freely available in the public domain:
-
-  * forkjoin
-

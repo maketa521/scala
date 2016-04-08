@@ -7,7 +7,7 @@ package scala
 package reflect
 package internal
 
-import scala.collection.{ mutable, immutable }
+import scala.collection.immutable
 import scala.collection.mutable.ListBuffer
 import util.{ Statistics, shortClassOfInstance }
 import Flags._
@@ -56,7 +56,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     new FreeTypeSymbol(name, origin) initFlags flags
 
   /**
-   * This map stores the original owner the the first time the owner of a symbol is re-assigned.
+   * This map stores the original owner the first time the owner of a symbol is re-assigned.
    * The original owner of a symbol is needed in some places in the backend. Ideally, owners should
    * be versioned like the type history.
    */
@@ -101,6 +101,9 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def isAbstract: Boolean = isAbstractClass || isDeferred || isAbstractType
     def isPrivateThis = (this hasFlag PRIVATE) && (this hasFlag LOCAL)
     def isProtectedThis = (this hasFlag PROTECTED) && (this hasFlag LOCAL)
+
+    def isJavaEnum: Boolean = hasJavaEnumFlag
+    def isJavaAnnotation: Boolean = hasJavaAnnotationFlag
 
     def newNestedSymbol(name: Name, pos: Position, newFlags: Long, isClass: Boolean): Symbol = name match {
       case n: TermName => newTermSymbol(n, pos, newFlags)
@@ -320,7 +323,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def newModuleVarSymbol(accessor: Symbol): TermSymbol = {
       val newName  = nme.moduleVarName(accessor.name.toTermName)
       val newFlags = MODULEVAR | ( if (this.isClass) PrivateLocal | SYNTHETIC else 0 )
-      val newInfo  = accessor.tpe.finalResultType
+      val newInfo  = thisType.memberType(accessor).finalResultType
       val mval     = newVariable(newName, accessor.pos.focus, newFlags.toLong) addAnnotation VolatileAttr
 
       if (this.isClass)
@@ -475,10 +478,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     final def newAnonymousFunctionValue(pos: Position, newFlags: Long = 0L): TermSymbol =
       newTermSymbol(nme.ANON_FUN_NAME, pos, SYNTHETIC | newFlags) setInfo NoType
 
-    def newImplClass(name: TypeName, pos: Position = NoPosition, newFlags: Long = 0L): ClassSymbol = {
-      newClassSymbol(name, pos, newFlags | IMPLCLASS)
-    }
-
     /** Refinement types P { val x: String; type T <: Number }
      *  also have symbols, they are refinementClasses
      */
@@ -495,9 +494,22 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      *  failure to the point when that name is used for something, which is
      *  often to the point of never.
      */
-    def newStubSymbol(name: Name, missingMessage: String): Symbol = name match {
-      case n: TypeName  => new StubClassSymbol(this, n, missingMessage)
+    def newStubSymbol(name: Name, missingMessage: String, isPackage: Boolean = false): Symbol = name match {
+      case n: TypeName  => if (isPackage) new StubPackageClassSymbol(this, n, missingMessage) else new StubClassSymbol(this, n, missingMessage)
       case _            => new StubTermSymbol(this, name.toTermName, missingMessage)
+    }
+
+    /** Given a field, construct a term symbol that represents the source construct that gave rise the field */
+    def sugaredSymbolOrSelf = {
+      val getter = getterIn(owner)
+      if (getter == NoSymbol) {
+        this
+      } else {
+        val result = owner.newValue(getter.name.toTermName, newFlags = getter.flags & ~Flags.METHOD).setPrivateWithin(getter.privateWithin).setInfo(getter.info.resultType)
+        val setter = setterIn(owner)
+        if (setter != NoSymbol) result.setFlag(Flags.MUTABLE)
+        result
+      }
     }
 
 // ----- locking and unlocking ------------------------------------------------------
@@ -572,7 +584,8 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def isAnonymousClass        = false
     def isCaseClass             = false
     def isConcreteClass         = false
-    def isImplClass             = false   // the implementation class of a trait
+    @deprecated("Trait implementation classes have been removed in Scala 2.12", "2.12.0")
+    def isImplClass             = false
     def isJavaInterface         = false
     def isNumericValueClass     = false
     def isPrimitiveValueClass   = false
@@ -732,7 +745,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     final def flags: Long = {
       if (Statistics.hotEnabled) Statistics.incCounter(flagsCount)
       val fs = _rawflags & phase.flagMask
-      (fs | ((fs & LateFlags) >>> LateShift)) & ~(fs >>> AntiShift)
+      (fs | ((fs & LateFlags) >>> LateShift)) & ~((fs & AntiFlags) >>> AntiShift)
     }
     def flags_=(fs: Long) = _rawflags = fs
     def rawflags_=(x: Long) { _rawflags = x }
@@ -822,7 +835,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     /** The package object symbol corresponding to this package or package class symbol, or NoSymbol otherwise */
     def packageObject: Symbol =
       if (isPackageClass) tpe.packageObject
-      else if (isPackage) moduleClass.packageObject
+      else if (hasPackageFlag) moduleClass.packageObject
       else NoSymbol
 
     /** If this is a constructor, its owner: otherwise this.
@@ -881,10 +894,11 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     // string.  So this needs attention.  For now the fact that migration is
     // private[scala] ought to provide enough protection.
     def hasMigrationAnnotation = hasAnnotation(MigrationAnnotationClass)
-    def migrationMessage    = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(0) }
-    def migrationVersion    = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(1) }
-    def elisionLevel        = getAnnotation(ElidableMethodClass) flatMap { _.intArg(0) }
-    def implicitNotFoundMsg = getAnnotation(ImplicitNotFoundClass) flatMap { _.stringArg(0) }
+    def migrationMessage     = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(0) }
+    def migrationVersion     = getAnnotation(MigrationAnnotationClass) flatMap { _.stringArg(1) }
+    def elisionLevel         = getAnnotation(ElidableMethodClass) flatMap { _.intArg(0) }
+    def implicitNotFoundMsg  = getAnnotation(ImplicitNotFoundClass) flatMap { _.stringArg(0) }
+    def implicitAmbiguousMsg = getAnnotation(ImplicitAmbiguousClass) flatMap { _.stringArg(0) }
 
     def isCompileTimeOnly       = hasAnnotation(CompileTimeOnlyAttr)
     def compileTimeOnlyMessage  = getAnnotation(CompileTimeOnlyAttr) flatMap (_ stringArg 0)
@@ -919,21 +933,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     final def isCaseCopy =
       isMethod && owner.isCase && isSynthetic && name == nme.copy
 
-    /** Is this symbol a trait which needs an implementation class? */
-    final def needsImplClass = (
-         isTrait
-      && (!isInterface || hasFlag(lateINTERFACE))
-      && !isImplClass
-    )
-
-    /** Is this a symbol which exists only in the implementation class, not in its trait? */
-    final def isImplOnly = isPrivate || (
-       (owner.isTrait || owner.isImplClass) && (
-            hasAllFlags(LIFTED | MODULE | METHOD)
-         || isConstructor
-         || hasFlag(notPRIVATE | LIFTED) && !hasFlag(ACCESSOR | SUPERACCESSOR | MODULE)
-       )
-    )
     final def isModuleVar = hasFlag(MODULEVAR)
 
     /**
@@ -957,10 +956,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      *    method `owner` returns the class C.
      *
      * Why not make a stable version of `isStatic`? Maybe some parts of the compiler depend on the
-     * current implementation. For example
-     *   trait T { def foo = 1 }
-     * The method `foo` in the implementation class T$impl will be `isStatic`, because trait
-     * impl classes get the `lateMODULE` flag (T$impl.isStaticOwner is true).
+     * current implementation.
      */
     def isStatic = (this hasFlag STATIC) || owner.isStaticOwner
 
@@ -970,7 +966,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
 
     /** Is this symbol a static member of its class? (i.e. needs to be implemented as a Java static?) */
     final def isStaticMember: Boolean =
-      hasFlag(STATIC) || owner.isImplClass
+      hasFlag(STATIC)
 
     /** Does this symbol denote a class that defines static symbols? */
     final def isStaticOwner: Boolean =
@@ -980,7 +976,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     private def isNotOverridden = (
       owner.isClass && (
            owner.isEffectivelyFinal
-        || owner.isSealed && owner.children.forall(c => c.isEffectivelyFinal && (overridingSymbol(c) == NoSymbol))
+        || (owner.isSealed && owner.sealedChildren.forall(c => c.isEffectivelyFinal && (overridingSymbol(c) == NoSymbol)))
       )
     )
 
@@ -992,6 +988,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
              isPrivate
           || isLocalToBlock
          )
+      || isClass && originalOwner.isTerm && children.isEmpty // we track known subclasses of term-owned classes, use that infer finality
     )
     /** Is this symbol effectively final or a concrete term member of sealed class whose children do not override it */
     final def isEffectivelyFinalOrNotOverridden: Boolean = isEffectivelyFinal || (isTerm && !isDeferred && isNotOverridden)
@@ -1159,7 +1156,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      *    phase check (if after flatten) in the (overridden) method "def owner" in
      *    ModuleSymbol / ClassSymbol. The `rawowner` field is not modified.
      *  - Owners are also changed in other situations, for example when moving trees into a new
-     *    lexical context, e.g. in the named/default arguments tranformation, or when translating
+     *    lexical context, e.g. in the named/default arguments transformation, or when translating
      *    extension method definitions.
      *
      * In general when seeking the owner of a symbol, one should call `owner`.
@@ -1243,14 +1240,14 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def needsModuleSuffix = (
          hasModuleFlag
       && !isMethod
-      && !isImplClass
       && !isJavaDefined
     )
     /** These should be moved somewhere like JavaPlatform.
      */
     def javaSimpleName: Name = addModuleSuffix(simpleName.dropLocal)
-    def javaBinaryName: Name = addModuleSuffix(fullNameInternal('/'))
-    def javaClassName: String  = addModuleSuffix(fullNameInternal('.')).toString
+    def javaBinaryName: Name = name.newName(javaBinaryNameString)
+    def javaBinaryNameString: String = fullName('/', moduleSuffix)
+    def javaClassName: String  = fullName('.', moduleSuffix)
 
     /** The encoded full path name of this symbol, where outer names and inner names
      *  are separated by `separator` characters.
@@ -1258,18 +1255,29 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      *  Never adds id.
      *  Drops package objects.
      */
-    final def fullName(separator: Char): String = fullNameAsName(separator).toString
+    final def fullName(separator: Char): String = fullName(separator, "")
 
-    /** Doesn't drop package objects, for those situations (e.g. classloading)
-     *  where the true path is needed.
-     */
-    private def fullNameInternal(separator: Char): Name = (
-      if (isRoot || isRootPackage || this == NoSymbol) name
-      else if (owner.isEffectiveRoot) name
-      else effectiveOwner.enclClass.fullNameAsName(separator) append (separator, name)
-    )
+    private def fullName(separator: Char, suffix: CharSequence): String = {
+      var b: java.lang.StringBuffer = null
+      def loop(size: Int, sym: Symbol): Unit = {
+        val symName = sym.name
+        val nSize = symName.length - (if (symName.endsWith(nme.LOCAL_SUFFIX_STRING)) 1 else 0)
+        if (sym.isRoot || sym.isRootPackage || sym == NoSymbol || sym.owner.isEffectiveRoot) {
+          val capacity = size + nSize
+          b = new java.lang.StringBuffer(capacity)
+          b.append(chrs, symName.start, nSize)
+        } else {
+          loop(size + nSize + 1, sym.effectiveOwner.enclClass)
+          b.append(separator)
+          b.append(chrs, symName.start, nSize)
+        }
+      }
+      loop(suffix.length(), this)
+      b.append(suffix)
+      b.toString
+    }
 
-    def fullNameAsName(separator: Char): Name = fullNameInternal(separator).dropLocal
+    def fullNameAsName(separator: Char): Name = name.newName(fullName(separator, ""))
 
     /** The encoded full path name of this symbol, where outer names and inner names
      *  are separated by periods.
@@ -1303,9 +1311,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
 
     protected def createPackageObjectClassSymbol(pos: Position, newFlags: Long): PackageObjectClassSymbol =
       new PackageObjectClassSymbol(this, pos) initFlags newFlags
-
-    protected def createImplClassSymbol(name: TypeName, pos: Position, newFlags: Long): ClassSymbol =
-      new ClassSymbol(this, pos, name) with ImplClassSymbol initFlags newFlags
 
     protected def createMethodSymbol(name: TermName, pos: Position, newFlags: Long): MethodSymbol =
       new MethodSymbol(this, pos, name) initFlags newFlags
@@ -1345,8 +1350,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
         createPackageObjectClassSymbol(pos, newFlags)
       else if ((newFlags & MODULE) != 0)
         createModuleClassSymbol(name, pos, newFlags)
-      else if ((newFlags & IMPLCLASS) != 0)
-        createImplClassSymbol(name, pos, newFlags)
       else
         createClassSymbol(name, pos, newFlags)
     }
@@ -1994,7 +1997,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      */
     def thisSym: Symbol = this
 
-    def hasSelfType = thisSym.tpeHK != this.tpeHK
+    def hasSelfType = (thisSym ne this) && (typeOfThis.typeConstructor ne typeConstructor)
 
     /** The type of `this` in a class, or else the type of the symbol itself. */
     def typeOfThis = thisSym.tpe_*
@@ -2055,12 +2058,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
      */
     def sourceModule: Symbol = NoSymbol
 
-    /** The implementation class of a trait.  If available it will be the
-     *  symbol with the same owner, and the name of this symbol with $class
-     *  appended to it.
-     */
-    final def implClass: Symbol = owner.info.decl(tpnme.implClassName(name))
-
     /** The class that is logically an outer class of given `clazz`.
      *  This is the enclosing class, except for classes defined locally to constructors,
      *  where it is the outer class of the enclosing class.
@@ -2119,7 +2116,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     /** The package class containing this symbol, or NoSymbol if there
      *  is not one.
      *  TODO: formulate as enclosingSuchThat, after making sure
-     *        we can start with current symbol rather than onwner.
+     *        we can start with current symbol rather than owner.
      *  TODO: Also harmonize with enclClass, enclMethod etc.
      */
     def enclosingPackageClass: Symbol = {
@@ -2264,16 +2261,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
       owner.rawInfo
     }
 
-    /** If this symbol is an implementation class, its interface, otherwise the symbol itself
-     *  The method follows two strategies to determine the interface.
-     *   - during or after erasure, it takes the last parent of the implementation class
-     *     (which is always the interface, by convention)
-     *   - before erasure, it looks up the interface name in the scope of the owner of the class.
-     *     This only works for implementation classes owned by other classes or traits.
-     *     !!! Why?
-     */
-    def toInterface: Symbol = this
-
     /** The module class corresponding to this module.
      */
     def moduleClass: Symbol = NoSymbol
@@ -2393,8 +2380,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
       var bcs = base.info.baseClasses dropWhile (owner != _) drop 1
       var sym: Symbol = NoSymbol
       while (!bcs.isEmpty && sym == NoSymbol) {
-        if (!bcs.head.isImplClass)
-          sym = matchingSymbol(bcs.head, base.thisType).suchThat(!_.isDeferred)
+        sym = matchingSymbol(bcs.head, base.thisType).suchThat(!_.isDeferred)
         bcs = bcs.tail
       }
       sym
@@ -2495,14 +2481,15 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     def associatedFile: AbstractFile = enclosingTopLevelClass.associatedFile
     def associatedFile_=(f: AbstractFile) { abort("associatedFile_= inapplicable for " + this) }
 
-    /** If this is a sealed class, its known direct subclasses.
+    /** If this is a sealed or local class, its known direct subclasses.
      *  Otherwise, the empty set.
      */
     def children: Set[Symbol] = Set()
+    final def sealedChildren: Set[Symbol] = if (!isSealed) Set.empty else children
 
     /** Recursively assemble all children of this symbol.
      */
-    def sealedDescendants: Set[Symbol] = children.flatMap(_.sealedDescendants) + this
+    final def sealedDescendants: Set[Symbol] = if (!isSealed) Set(this) else children.flatMap(_.sealedDescendants) + this
 
     @inline final def orElse(alt: => Symbol): Symbol = if (this ne NoSymbol) this else alt
     @inline final def andAlso(f: Symbol => Unit): Symbol = { if (this ne NoSymbol) f(this) ; this }
@@ -2527,7 +2514,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     /** String representation of symbol's definition key word */
     final def keyString: String =
       if (isJavaInterface) "interface"
-      else if (isTrait && !isImplClass) "trait"
+      else if (isTrait) "trait"
       else if (isClass) "class"
       else if (isType && !isParameter) "type"
       else if (isVariable) "var"
@@ -2554,7 +2541,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
         else if (isSetter) ("setter", if (isSourceMethod) "method" else "value", "SET")
         else if (isTerm && isLazy) ("lazy value", "lazy value", "LAZ")
         else if (isVariable) ("field", "variable", "VAR")
-        else if (isImplClass) ("implementation class", "class", "IMPL")
         else if (isTrait) ("trait", "trait", "TRT")
         else if (isClass) ("class", "class", "CLS")
         else if (isType) ("type", "type", "TPE")
@@ -2791,7 +2777,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
       case DEFAULTPARAM => "<defaultparam>" // TRAIT
       case MIXEDIN      => "<mixedin>"      // EXISTENTIAL
       case LABEL        => "<label>"        // CONTRAVARIANT / INCONSTRUCTOR
-      case PRESUPER     => "<presuper>"     // IMPLCLASS
       case BYNAMEPARAM  => if (this.isValueParameter) "<bynameparam>" else "<captured>" // COVARIANT
       case _            => super.resolveOverloadedFlag(flag)
     }
@@ -2945,7 +2930,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
       loop(info)
     }
 
-    override def exceptions = annotations flatMap ThrownException.unapply
+    override def exceptions = for (ThrownException(tp) <- annotations) yield tp.typeSymbol
   }
   implicit val MethodSymbolTag = ClassTag[MethodSymbol](classOf[MethodSymbol])
 
@@ -3192,7 +3177,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     override def resolveOverloadedFlag(flag: Long) = flag match {
       case INCONSTRUCTOR => "<inconstructor>" // INCONSTRUCTOR / CONTRAVARIANT / LABEL
       case EXISTENTIAL   => "<existential>"   // EXISTENTIAL / MIXEDIN
-      case IMPLCLASS     => "<implclass>"     // IMPLCLASS / PRESUPER
       case _             => super.resolveOverloadedFlag(flag)
     }
 
@@ -3204,7 +3188,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     override def isAbstractClass           = this hasFlag ABSTRACT
     override def isCaseClass               = this hasFlag CASE
     override def isClassLocalToConstructor = this hasFlag INCONSTRUCTOR
-    override def isImplClass               = this hasFlag IMPLCLASS
     override def isModuleClass             = this hasFlag MODULE
     override def isPackageClass            = this hasFlag PACKAGE
     override def isTrait                   = this hasFlag TRAIT
@@ -3222,13 +3205,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
 
     // The corresponding interface is the last parent by convention.
     private def lastParent = if (tpe.parents.isEmpty) NoSymbol else tpe.parents.last.typeSymbol
-    override def toInterface: Symbol = (
-      if (isImplClass) {
-        if (phase.next.erasedTypes) lastParent
-        else owner.info.decl(tpnme.interfaceName(name))
-      }
-      else super.toInterface
-    )
 
     /** Is this class locally defined?
      *  A class is local, if
@@ -3259,7 +3235,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
 
     override def existentialBound = GenPolyType(this.typeParams, TypeBounds.upper(this.classBound))
 
-    def primaryConstructorName = if (this hasFlag TRAIT | IMPLCLASS) nme.MIXIN_CONSTRUCTOR else nme.CONSTRUCTOR
+    def primaryConstructorName = if (this hasFlag TRAIT) nme.MIXIN_CONSTRUCTOR else nme.CONSTRUCTOR
 
     override def primaryConstructor = {
       val c = info decl primaryConstructorName
@@ -3405,12 +3381,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     }
   }
 
-  trait ImplClassSymbol extends ClassSymbol {
-    override def sourceModule = companionModule
-    // override def isImplClass = true
-    override def typeOfThis  = thisSym.tpe // don't use the ModuleClassSymbol typeOfThisCache.
-  }
-
   class PackageClassSymbol protected[Symbols] (owner0: Symbol, pos0: Position, name0: TypeName)
   extends ModuleClassSymbol(owner0, pos0, name0) {
     override def sourceModule = companionModule
@@ -3422,7 +3392,6 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
   extends ClassSymbol(owner0, pos0, tpnme.REFINE_CLASS_NAME) {
     override def name_=(name: Name) {
       abort("Cannot set name of RefinementClassSymbol to " + name)
-      super.name_=(name)
     }
     override def isRefinementClass       = true
     override def isAnonOrRefinementClass = true
@@ -3471,6 +3440,7 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     override def companionSymbol = fail(NoSymbol)
   }
   class StubClassSymbol(owner0: Symbol, name0: TypeName, val missingMessage: String) extends ClassSymbol(owner0, owner0.pos, name0) with StubSymbol
+  class StubPackageClassSymbol(owner0: Symbol, name0: TypeName, val missingMessage: String) extends PackageClassSymbol(owner0, owner0.pos, name0) with StubSymbol
   class StubTermSymbol(owner0: Symbol, name0: TermName, val missingMessage: String) extends TermSymbol(owner0, owner0.pos, name0) with StubSymbol
 
   trait FreeSymbol extends Symbol {
@@ -3668,7 +3638,10 @@ trait Symbols extends api.Symbols { self: SymbolTable =>
     assert((prev eq null) || phaseId(validFrom) > phaseId(prev.validFrom), this)
     assert(validFrom != NoPeriod, this)
 
-    private def phaseString = "%s: %s".format(phaseOf(validFrom), info)
+    private def phaseString = {
+      val phase = phaseOf(validFrom)
+      s"$phase: ${exitingPhase(phase)(info.toString)}"
+    }
     override def toString = toList reverseMap (_.phaseString) mkString ", "
 
     def toList: List[TypeHistory] = this :: ( if (prev eq null) Nil else prev.toList )

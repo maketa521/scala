@@ -22,7 +22,7 @@
 #    - To prevent staging on sonatype (for testing), set publishToSonatype to anything but "yes"
 #    - Note: After building a release, the jenkins job provides an updated versions.properties file as artifact.
 #      Put this file in the Scala repo and create a pull request, and also update the file build.number.
-# 
+#
 # - Otherwise, a nightly release is built:
 #    - version number is read from the build.number file, extended with -$sha-nightly
 
@@ -33,7 +33,7 @@
 #    - Set <MODULE>_VER to override the default, e.g. XML_VER="1.0.4".
 #    - The git revision is set to <MODULE>_REF="v$<MODULE>_VER". Make sure the tag exists (you can't override <MODULE>_REF).
 #
-#  - Otherwise (moduleVersioning has some other value): in this mode we use nightly version nubmers for modules.
+#  - Otherwise (moduleVersioning has some other value): in this mode we use nightly version numbers for modules.
 #    - By default the script sets all <MODULE>_REF to "HEAD", override to build a specific revision.
 #    - The <MODULE>_VER is set to a nightly version, for example "1.0.3-7-g14888a2-nightly" (you can't override <MODULE>_VER)
 
@@ -73,7 +73,7 @@
 
 
 # Requirements
-#  - sbtCmd must point to sbt from sbt-extras
+#  - SBT_CMD must point to sbt from sbt-extras
 #  - ~/.sonatype-curl, ~/.m2/settings.xml, ~/.credentials, ~/.credentials-sonatype, ~/.credentials-private-repo
 #    as defined by https://github.com/scala/scala-jenkins-infra/tree/master/templates/default
 #  - ~/.sbt/0.13/plugins/gpg.sbt with:
@@ -87,11 +87,8 @@ moduleVersioning=${moduleVersioning-"versions.properties"}
 publishPrivateTask=${publishPrivateTask-"publish"}
 publishSonatypeTaskCore=${publishSonatypeTaskCore-"publish-signed"}
 publishSonatypeTaskModules=${publishSonatypeTaskModules-"publish-signed"}
+publishStarrPrivateTask=${publishStarrPrivateTask-$publishPrivateTask} # set to "init" to speed up testing of the script (if you already built STARR before)
 publishLockerPrivateTask=${publishLockerPrivateTask-$publishPrivateTask} # set to "init" to speed up testing of the script (if you already built locker before)
-
-sbtCmd=${sbtCmd-sbt} # TESTING (this is a marker for defaults to change when testing locally: should be sbtx on my mac)
-
-sbtCmd="$sbtCmd -sbt-version 0.13.8"
 
 forceRebuild=${forceRebuild-no}
 
@@ -180,8 +177,8 @@ function st_stagingRepoClose() {
 sbtArgs="-no-colors -ivy $baseDir/ivy2 -Dsbt.override.build.repos=true -Dsbt.repository.config=$sbtRepositoryConfig -Dsbt.global.base=$HOME/.sbt/0.13 -sbt-dir $HOME/.sbt/0.13"
 
 sbtBuild() {
-  echo "### sbtBuild: "$sbtCmd $sbtArgs "${scalaVersionTasks[@]}" "${publishTasks[@]}" "$@"
-  $sbtCmd $sbtArgs "${scalaVersionTasks[@]}" "${publishTasks[@]}" "$@" >> $baseDir/logs/builds 2>&1
+  echo "### sbtBuild: "$SBT_CMD $sbtArgs "${scalaVersionTasks[@]}" "${publishTasks[@]}" "$@"
+  $SBT_CMD $sbtArgs "${scalaVersionTasks[@]}" "${publishTasks[@]}" "$@" >> $baseDir/logs/builds 2>&1
 }
 
 sbtResolve() {
@@ -189,8 +186,8 @@ sbtResolve() {
   touch build.sbt
   # Can be set to `full` if a module requires cross-versioning against the full Scala version, like the continuations plugin used to.
   cross=${4-binary}
-  echo "### sbtResolve: $sbtCmd $sbtArgs " "${scalaVersionTasks[@]}" "\"$1\" % \"$2\" % \"$3\" cross CrossVersion.$cross"
-  $sbtCmd $sbtArgs "${scalaVersionTasks[@]}" \
+  echo "### sbtResolve: $SBT_CMD $sbtArgs " "${scalaVersionTasks[@]}" "\"$1\" % \"$2\" % \"$3\" cross CrossVersion.$cross"
+  $SBT_CMD $sbtArgs "${scalaVersionTasks[@]}" \
     "set libraryDependencies := Seq(\"$1\" % \"$2\" % \"$3\" cross CrossVersion.$cross)" \
       'show update' >> $baseDir/logs/resolution 2>&1
 }
@@ -212,13 +209,23 @@ sbtResolve() {
 # scala-xml depends on scala-library, so sbt tries to find the scala-library of the version that we are currently building,
 # which exists only in private-repo.
 
+docTask() {
+  if [[ "$STARR_REF" != "" && "$1" != "yes" ]]; then
+    # Don't build module docs on the first round of module builds when bootstrapping
+    # a binary incompatible compiler change to avoid linkage errors with using the old Scaladoc
+    echo set publishArtifact in packageDoc in Compile := false
+  else
+    echo doc
+  fi
+}
+
 buildXML() {
   if [ "$XML_BUILT" != "yes" ] && [ "$forceRebuild" != "yes" ] && ( sbtResolve "org.scala-lang.modules"  "scala-xml" $XML_VER )
   then echo "Found scala-xml $XML_VER; not building."
   else
     update scala scala-xml "$XML_REF" && gfxd
-    # TODO: compile under 2.12 source level once `scala.xml.XMLTest.escape` is fixed (see #4451)
-    sbtBuild 'set scalacOptions += "-Xsource:2.11"' 'set version := "'$XML_VER'-DOC"' $clean doc  'set version := "'$XML_VER'"' test "${buildTasks[@]}"
+    doc="$(docTask $XML_BUILT)"
+    sbtBuild 'set version := "'$XML_VER'-DOC"' $clean "$doc" 'set version := "'$XML_VER'"' test "${buildTasks[@]}"
     XML_BUILT="yes" # ensure the module is built and published when buildXML is invoked for the second time, see comment above
   fi
 }
@@ -228,7 +235,8 @@ buildParsers() {
   then echo "Found scala-parser-combinators $PARSERS_VER; not building."
   else
     update scala scala-parser-combinators "$PARSERS_REF" && gfxd
-    sbtBuild 'set version := "'$PARSERS_VER'-DOC"' $clean doc 'set version := "'$PARSERS_VER'"' test "${buildTasks[@]}"
+    doc="$(docTask $PARSERS_BUILT)"
+    sbtBuild 'set version := "'$PARSERS_VER'-DOC"' $clean "$doc" 'set version := "'$PARSERS_VER'"' test "${buildTasks[@]}"
     PARSERS_BUILT="yes"
   fi
 }
@@ -238,26 +246,19 @@ buildPartest() {
   then echo "Found scala-partest $PARTEST_VER; not building."
   else
     update scala scala-partest "$PARTEST_REF" && gfxd
-    sbtBuild 'set version :="'$PARTEST_VER'"' 'set VersionKeys.scalaXmlVersion := "'$XML_VER'"' 'set VersionKeys.scalaCheckVersion := "'$SCALACHECK_VER'"' $clean test "${buildTasks[@]}"
+    doc="$(docTask $PARTEST_BUILT)"
+    sbtBuild 'set version :="'$PARTEST_VER'"' 'set VersionKeys.scalaXmlVersion := "'$XML_VER'"' 'set VersionKeys.scalaCheckVersion := "'$SCALACHECK_VER'"' $clean "$doc" test "${buildTasks[@]}"
     PARTEST_BUILT="yes"
   fi
 }
-
-# buildPartestIface() {
-#   if [ "$forceRebuild" != "yes" ] && ( sbtResolve "org.scala-lang.modules"  "scala-partest-interface" $PARTEST_IFACE_VER )
-#   then echo "Found scala-partest-interface $PARTEST_IFACE_VER; not building."
-#   else
-#     update scala scala-partest-interface "$PARTEST_IFACE_REF" && gfxd
-#     sbtBuild 'set version :="'$PARTEST_IFACE_VER'"' $clean "${buildTasks[@]}"
-#   fi
-# }
 
 buildSwing() {
   if [ "$SWING_BUILT" != "yes" ] && [ "$forceRebuild" != "yes" ] && ( sbtResolve "org.scala-lang.modules"  "scala-swing" $SWING_VER )
   then echo "Found scala-swing $SWING_VER; not building."
   else
     update scala scala-swing "$SWING_REF" && gfxd
-    sbtBuild 'set version := "'$SWING_VER'"' $clean test "${buildTasks[@]}"
+    doc="$(docTask $SWING_BUILT)"
+    sbtBuild 'set version := "'$SWING_VER'"' $clean "$doc" test "${buildTasks[@]}"
     SWING_BUILT="yes"
   fi
 }
@@ -268,7 +269,8 @@ buildScalacheck(){
   then echo "Found scalacheck $SCALACHECK_VER; not building."
   else
     update rickynils scalacheck $SCALACHECK_REF && gfxd
-    sbtBuild 'set version := "'$SCALACHECK_VER'"' 'set VersionKeys.scalaParserCombinatorsVersion := "'$PARSERS_VER'"' $clean publish # test times out NOTE: never published to sonatype
+    doc="$(docTask $SCALACHECK_BUILT)"
+    sbtBuild 'set version := "'$SCALACHECK_VER'"' 'set VersionKeys.scalaParserCombinatorsVersion := "'$PARSERS_VER'"' $clean "$doc" publish # test times out NOTE: never published to sonatype
     SCALACHECK_BUILT="yes"
   fi
 }
@@ -282,7 +284,6 @@ buildModules() {
   buildSwing
   buildScalacheck
   buildPartest
-  # buildPartestIface
 }
 
 buildPublishedModules() {
@@ -292,7 +293,6 @@ buildPublishedModules() {
   buildParsers
   buildSwing
   buildPartest
-  # buildPartestIface
 }
 
 
@@ -312,7 +312,7 @@ scalaVerToBinary() {
   #  - the suffix starts with "-bin": 2.12.0-bin-M1
   #  - the patch version is > 0     : 2.12.1-M1, 1.12.3-RC2, 2.12.1-sha-nightly, 2.12.2-SNAPSHOT
   #
-  # Othwersise, the binary version is the full version: 2.12.0-M1, 2.12.0-RC2, 2.12.0-sha-nightly, 2.12.0-SNAPSHOT
+  # Otherwise, the binary version is the full version: 2.12.0-M1, 2.12.0-RC2, 2.12.0-sha-nightly, 2.12.0-SNAPSHOT
   #
   # Adapted from sbt: https://github.com/sbt/sbt/blob/0.13.8/util/cross/src/main/input_sources/CrossVersionUtil.scala#L39
   #
@@ -405,7 +405,6 @@ deriveModuleVersions() {
               PARSERS_REF="v$PARSERS_VER"
                 SWING_REF="v$SWING_VER"
               PARTEST_REF="v$PARTEST_VER"
-      # PARTEST_IFACE_REF="v$PARTEST_IFACE_VER"
            SCALACHECK_REF="$SCALACHECK_VER" # no `v` in their tags
    else
     # use HEAD as default when no revision is specified on the command line
@@ -413,7 +412,6 @@ deriveModuleVersions() {
              PARSERS_REF=${PARSERS_REF-"HEAD"}
                SWING_REF=${SWING_REF-"HEAD"}
              PARTEST_REF=${PARTEST_REF-"HEAD"}
-     # PARTEST_IFACE_REF=${PARTEST_IFACE_REF-"HEAD"}
           SCALACHECK_REF=${SCALACHECK_REF-"HEAD"}
 
                  XML_VER=$(deriveVersion scala scala-xml "$XML_REF")
@@ -430,7 +428,6 @@ deriveModuleVersions() {
   echo "SWING            = $SWING_VER at $SWING_REF"
   echo "XML              = $XML_VER at $XML_REF"
 
-  # PARTEST_IFACE_VER=${PARTEST_IFACE_VER-$(deriveVersion scala scala-partest-interface "$PARTEST_IFACE_REF")}
 }
 
 createNetrcFile() {
@@ -445,7 +442,7 @@ removeExistingBuilds() {
   local netrcFile="$HOME/.credentials-private-repo-netrc"
 
   local storageApiUrl=`echo $releaseTempRepoUrl | sed 's/\(scala-release-temp\)/api\/storage\/\1/'`
-  local scalaLangModules=`curl -s $storageApiUrl/org/scala-lang | jq -r '.children | .[] | "org/scala-lang" + .uri'`
+  local scalaLangModules=`curl -s $storageApiUrl/org/scala-lang | jq -r '.children | .[] | "org/scala-lang" + .uri' | grep -v actors-migration`
 
   for module in "org/scalacheck" $scalaLangModules; do
     local artifacts=`curl -s $storageApiUrl/$module | jq -r ".children | .[] | select(.uri | contains(\"$SCALA_VER\")) | .uri"`
@@ -481,6 +478,29 @@ bootstrap() {
 
   cd $WORKSPACE
 
+  #### (Optional) STARR.
+  if [ ! -z "$STARR_REF" ]; then
+      echo "### Building STARR"
+
+      STARR_DIR=./scala-starr
+      STARR_VER_SUFFIX="-$(git rev-parse --short $STARR_REF)-nightly"
+      STARR_VER=$SCALA_VER_BASE$STARR_VER_SUFFIX
+      rm -rf "$STARR_DIR"
+      (
+        git clone --reference $WORKSPACE/.git $WORKSPACE/.git $STARR_DIR
+        cd $STARR_DIR
+        git co $STARR_REF
+        ant -Dmaven.version.number=$STARR_VER\
+            -Dremote.snapshot.repository=NOPE\
+            -Dremote.release.repository=$releaseTempRepoUrl\
+            -Drepository.credentials.id=$releaseTempRepoCred\
+            -Dscalac.args.optimise=-Yopt:l:classpath\
+            -Ddocs.skip=1\
+            -Dlocker.skip=1\
+            $publishStarrPrivateTask >> $baseDir/logs/builds 2>&1
+      )
+  fi
+
   #### LOCKER
 
   echo "### Building locker"
@@ -490,15 +510,16 @@ bootstrap() {
   # must publish under $SCALA_VER so that the modules will depend on this (binary) version of Scala
   # publish more than just core: partest needs scalap
   # in sabbus lingo, the resulting Scala build will be used as starr to build the released Scala compiler
+  if [ ! -z "$STARR_VER" ]; then SET_STARR=-Dstarr.version=$STARR_VER; fi
   ant -Dmaven.version.number=$SCALA_VER\
       -Dremote.snapshot.repository=NOPE\
+      $SET_STARR\
       -Dremote.release.repository=$releaseTempRepoUrl\
       -Drepository.credentials.id=$releaseTempRepoCred\
       -Dscalac.args.optimise=-Yopt:l:classpath\
       -Ddocs.skip=1\
       -Dlocker.skip=1\
       $publishLockerPrivateTask >> $baseDir/logs/builds 2>&1
-
 
   echo "### Building modules using locker"
 
@@ -514,7 +535,7 @@ bootstrap() {
 
   echo "### Bootstrapping Scala using locker"
 
-  # # TODO: close all open staging repos so that we can be reaonably sure the only open one we see after publishing below is ours
+  # # TODO: close all open staging repos so that we can be reasonably sure the only open one we see after publishing below is ours
   # # the ant call will create a new one
   #
   # Rebuild Scala with these modules so that all binary versions are consistent.

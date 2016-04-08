@@ -328,10 +328,12 @@ A type pattern $T$ is of one of the following  forms:
 
 * A reference to a class $C$, $p.C$, or `$T$#$C$`.  This
   type pattern matches any non-null instance of the given class.
-  Note that the prefix of the class, if it is given, is relevant for determining
+  Note that the prefix of the class, if it exists, is relevant for determining
   class instances. For instance, the pattern $p.C$ matches only
   instances of classes $C$ which were created with the path $p$ as
-  prefix.
+  prefix. This also applies to prefixes which are not given syntactically.
+  For example, if $C$ refers to a class defined in the nearest enclosing
+  class and is thus equivalent to $this.C$, it is considered to have a prefix.
 
   The bottom types `scala.Nothing` and `scala.Null` cannot
   be used as type patterns, because they would match nothing in any case.
@@ -507,7 +509,7 @@ def f[B](t: Term[B]): B = t match {
 The expected type of the pattern `y: Number` is
 `Term[B]`.  The type `Number` does not conform to
 `Term[B]`; hence Case 2 of the rules above
-applies. This means that `b` is treated as another type
+applies. This means that `B` is treated as another type
 variable for which subtype constraints are inferred. In our case the
 applicable constraint is `Number <: Term[B]`, which
 entails `B = Int`.  Hence, `B` is treated in
@@ -652,7 +654,8 @@ or `scala.PartialFunction[$S_1$, $R$]`, where the
 argument type(s) $S_1 , \ldots , S_k$ must be fully determined, but the result type
 $R$ may be undetermined.
 
-If the expected type is `scala.Function$k$[$S_1 , \ldots , S_k$, $R$]`,
+If the expected type is [SAM-convertible](06-expressions.html#sam-conversion)
+to `scala.Function$k$[$S_1 , \ldots , S_k$, $R$]`,
 the expression is taken to be equivalent to the anonymous function:
 
 ```scala

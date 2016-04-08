@@ -13,7 +13,7 @@ package immutable
 import scala.annotation.unchecked.uncheckedVariance
 import scala.compat.Platform
 import scala.collection.generic._
-import scala.collection.mutable.Builder
+import scala.collection.mutable.{Builder, ReusableBuilder}
 import scala.collection.parallel.immutable.ParVector
 
 /** Companion object to the Vector class
@@ -156,7 +156,7 @@ override def companion: GenericCompanion[Vector] = Vector
   override def take(n: Int): Vector[A] = {
     if (n <= 0)
       Vector.empty
-    else if (startIndex + n < endIndex)
+    else if (startIndex < endIndex - n)
       dropBack0(startIndex + n)
     else
       this
@@ -165,7 +165,7 @@ override def companion: GenericCompanion[Vector] = Vector
   override def drop(n: Int): Vector[A] = {
     if (n <= 0)
       this
-    else if (startIndex + n < endIndex)
+    else if (startIndex < endIndex - n)
       dropFront0(startIndex + n)
     else
       Vector.empty
@@ -704,8 +704,8 @@ extends AbstractIterator[A]
   }
 }
 
-
-final class VectorBuilder[A]() extends Builder[A,Vector[A]] with VectorPointer[A @uncheckedVariance] {
+/** A class to build instances of `Vector`.  This builder is reusable. */
+final class VectorBuilder[A]() extends ReusableBuilder[A,Vector[A]] with VectorPointer[A @uncheckedVariance] {
 
   // possible alternative: start with display0 = null, blockIndex = -32, lo = 32
   // to avoid allocating initial array if the result will be empty anyways
@@ -951,8 +951,6 @@ private[immutable] trait VectorPointer[T] {
     // STUFF BELOW USED BY APPEND / UPDATE
 
     private[immutable] final def copyOf(a: Array[AnyRef]) = {
-      //println("copy")
-      if (a eq null) println ("NULL")
       val b = new Array[AnyRef](a.length)
       Platform.arraycopy(a, 0, b, 0, a.length)
       b
@@ -1156,8 +1154,6 @@ private[immutable] trait VectorPointer[T] {
         if (depth == 3) {
           display3 = new Array(32)
           display3((oldIndex >> 15) & 31) = display2
-          display2 = new Array(32)
-          display1 = new Array(32)
           depth +=1
         }
         display2 = display3((newIndex >> 15) & 31).asInstanceOf[Array[AnyRef]]
@@ -1170,9 +1166,6 @@ private[immutable] trait VectorPointer[T] {
         if (depth == 4) {
           display4 = new Array(32)
           display4((oldIndex >> 20) & 31) = display3
-          display3 = new Array(32)
-          display2 = new Array(32)
-          display1 = new Array(32)
           depth +=1
         }
         display3 = display4((newIndex >> 20) & 31).asInstanceOf[Array[AnyRef]]
@@ -1187,13 +1180,9 @@ private[immutable] trait VectorPointer[T] {
         if (depth == 5) {
           display5 = new Array(32)
           display5((oldIndex >>  25) & 31) = display4
-          display4 = new Array(32)
-          display3 = new Array(32)
-          display2 = new Array(32)
-          display1 = new Array(32)
           depth +=1
         }
-        display4 = display5((newIndex >> 20) & 31).asInstanceOf[Array[AnyRef]]
+        display4 = display5((newIndex >> 25) & 31).asInstanceOf[Array[AnyRef]]
         if (display4 == null) display4 = new Array(32)
         display3 = display4((newIndex >> 20) & 31).asInstanceOf[Array[AnyRef]]
         if (display3 == null) display3 = new Array(32)

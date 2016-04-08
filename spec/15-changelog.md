@@ -31,7 +31,7 @@ formal parameter types. Added section on
 [numeric widening](06-expressions.html#numeric-widening) to support
 weak conformance.
 
-Tightened rules to avoid accidential [overrides](05-classes-and-objects.html#overriding).
+Tightened rules to avoid accidental [overrides](05-classes-and-objects.html#overriding).
 
 Removed class literals.
 
@@ -53,7 +53,7 @@ has been brought in line with. From now on `+=`, has the same precedence as `=`.
 
 #### Wildcards as function parameters
 
-A formal parameter to an anonymous fucntion may now be a
+A formal parameter to an anonymous function may now be a
 [wildcard represented by an underscore](06-expressions.html#placeholder-syntax-for-anonymous-functions).
 
 >      _ => 7   // The function that ignores its argument
@@ -441,7 +441,7 @@ In the example, `Twice` is an extractor object with two methods:
 
 -   The `unapply` method is used to decompose an even number; it is in a sense
     the reverse of `apply`. `unapply` methods return option types:
-    `Some(...)` for a match that suceeds, `None` for a match that fails.
+    `Some(...)` for a match that succeeds, `None` for a match that fails.
     Pattern variables are returned as the elements of `Some`.
     If there are several variables, they are grouped in a tuple.
 
@@ -532,7 +532,7 @@ In particular, one can now simulate package protected access as in Java writing
 
 where would name the package containing `X`.
 
-#### Relaxation of Private Acess
+#### Relaxation of Private Access
 
 [Private members of a class](05-classes-and-objects.html#private) can now be
 referenced from the companion module of the class and vice versa.

@@ -58,6 +58,7 @@ trait GenSeqLike[+A, +Repr] extends Any with GenIterableLike[A, Repr] with Equal
    *  Note: `xs.length` and `xs.size` yield the same result.
    *
    *  @return     the number of elements in this $coll.
+   *  @throws     IllegalArgumentException if the length of the sequence cannot be represented in an `Int`, for example, `(-1 to Int.MaxValue).length`.
    */
   def length: Int
 
@@ -274,7 +275,7 @@ trait GenSeqLike[+A, +Repr] extends Any with GenIterableLike[A, Repr] with Equal
    *  @tparam B        the element type of the returned $coll.
    *  @tparam That     $thatinfo
    *  @param bf        $bfinfo
-   *  @return a new $coll` which is a copy of this $coll with the element at position `index` replaced by `elem`.
+   *  @return a new $coll which is a copy of this $coll with the element at position `index` replaced by `elem`.
    *  @throws IndexOutOfBoundsException if `index` does not satisfy `0 <= index < length`.
    *
    *  @usecase def updated(index: Int, elem: A): $Coll[A]

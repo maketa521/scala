@@ -13,12 +13,15 @@ package collection
 package immutable
 
 import generic._
-import scala.annotation.{tailrec, bridge}
+import scala.annotation.tailrec
 
 /** $factoryInfo
  *  @since 1
  *  @see [[http://docs.scala-lang.org/overviews/collections/concrete-immutable-collection-classes.html#list_maps "Scala's Collection Library overview"]]
  *  section on `List Maps` for more information.
+ *
+ *  Note that `ListMap` is built in reverse order to canonical traversal order (traversal order is oldest first).
+ *  Thus, `head` and `tail` are O(n).  To rapidly partition a `ListMap` into elements, use `last` and `init` instead.  These are O(1).
  *
  *  @define Coll immutable.ListMap
  *  @define coll immutable list map
@@ -30,13 +33,15 @@ object ListMap extends ImmutableMapFactory[ListMap] {
   def empty[A, B]: ListMap[A, B] = EmptyListMap.asInstanceOf[ListMap[A, B]]
 
   @SerialVersionUID(-8256686706655863282L)
-  private object EmptyListMap extends ListMap[Any, Nothing] { 
+  private object EmptyListMap extends ListMap[Any, Nothing] {
     override def apply(key: Any) = throw new NoSuchElementException("key not found: " + key)
     override def contains(key: Any) = false
+    override def last: (Any, Nothing) = throw new NoSuchElementException("Empty ListMap")
+    override def init: ListMap[Any, Nothing] = throw new NoSuchElementException("Empty ListMap")
   }
 }
 
-/** This class implements immutable maps using a list-based data structure.
+/** This class implements immutable maps using a list-based data structure, which preserves insertion order.
  *  Instances of `ListMap` represent empty maps; they can be either created by
  *  calling the constructor directly, or by applying the function `ListMap.empty`.
  *
@@ -53,8 +58,7 @@ object ListMap extends ImmutableMapFactory[ListMap] {
  *  @define willNotTerminateInf
  */
 @SerialVersionUID(301002838095710379L)
-@deprecatedInheritance("The semantics of immutable collections makes inheriting from ListMap error-prone.", "2.11.0")
-class ListMap[A, +B]
+sealed class ListMap[A, +B]
 extends AbstractMap[A, B]
    with Map[A, B]
    with MapLike[A, B, ListMap[A, B]]
@@ -179,16 +183,16 @@ extends AbstractMap[A, B]
     @tailrec private def get0(cur: ListMap[A, B1], k: A): Option[B1] =
       if (k == cur.key) Some(cur.value)
       else if (cur.next.nonEmpty) get0(cur.next, k) else None
-      
-      
+
+
     override def contains(key: A): Boolean = contains0(this, key)
-    
+
     @tailrec private def contains0(cur: ListMap[A, B1], k: A): Boolean =
       if (k == cur.key) true
       else if (cur.next.nonEmpty) contains0(cur.next, k)
       else false
 
-      
+
     /** This method allows one to create a new map with an additional mapping
      *  from `key` to `value`. If the map contains already a mapping for `key`,
      *  it will be overridden by this function.
@@ -198,7 +202,7 @@ extends AbstractMap[A, B]
       new m.Node[B2](k, v)
     }
 
-    
+
     /** Creates a new mapping without the given `key`.
      *  If the map does not contain a mapping for the given key, the
      *  method returns the same map.
@@ -216,5 +220,9 @@ extends AbstractMap[A, B]
         remove0(k, cur.next, cur::acc)
 
     override protected def next: ListMap[A, B1] = ListMap.this
+
+    override def last: (A, B1) = (key, value)
+
+    override def init: ListMap[A, B1] = next
   }
 }

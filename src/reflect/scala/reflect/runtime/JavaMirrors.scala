@@ -2,24 +2,24 @@ package scala
 package reflect
 package runtime
 
+import scala.language.existentials
+
 import scala.ref.WeakReference
 import scala.collection.mutable.WeakHashMap
 
 import java.lang.{Class => jClass, Package => jPackage}
 import java.lang.reflect.{
   Method => jMethod, Constructor => jConstructor, Field => jField,
-  Member => jMember, Type => jType, TypeVariable => jTypeVariable, Array => jArray,
-  AccessibleObject => jAccessibleObject,
+  Member => jMember, Type => jType, TypeVariable => jTypeVariable,
   GenericDeclaration, GenericArrayType, ParameterizedType, WildcardType, AnnotatedElement }
 import java.lang.annotation.{Annotation => jAnnotation}
 import java.io.IOException
-import scala.reflect.internal.{ MissingRequirementError, JavaAccFlags, JMethodOrConstructor }
+import scala.reflect.internal.{ MissingRequirementError, JavaAccFlags }
 import internal.pickling.ByteCodecs
 import internal.pickling.UnPickler
-import scala.collection.mutable.{ HashMap, ListBuffer, ArrayBuffer }
+import scala.collection.mutable.ListBuffer
 import internal.Flags._
 import ReflectionUtils._
-import scala.language.existentials
 import scala.runtime.{ScalaRunTime, BoxesRunTime}
 
 private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUniverse with TwoWayCaches { thisUniverse: SymbolTable =>
@@ -124,9 +124,9 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
     private def ErrorArrayConstructor(sym: Symbol, owner: Symbol) = abort(s"Cannot instantiate arrays with mirrors. Consider using `scala.reflect.ClassTag(<class of element>).newArray(<length>)` instead")
     private def ErrorFree(member: Symbol, freeType: Symbol)       = abort(s"cannot reflect ${member.kindString} ${member.name}, because it's a member of a weak type ${freeType.name}")
     private def ErrorNonExistentField(sym: Symbol)                = abort(
-      sm"""Scala field ${sym.name} isn't represented as a Java field, neither it has a Java accessor method
-          |note that private parameters of class constructors don't get mapped onto fields and/or accessors,
-          |unless they are used outside of their declaring constructors.""")
+      sm"""Scala field ${sym.name} of ${sym.owner} isn't represented as a Java field, nor does it have a
+          |Java accessor method. One common reason for this is that it may be a private class parameter
+          |not used outside the primary constructor.""")
 
     /** Helper functions for extracting typed values from a (Class[_], Any)
      *  representing an annotation argument.
@@ -999,9 +999,9 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
         }
 
         val cls =
-          if (jclazz.isMemberClass && !nme.isImplClassName(jname))
+          if (jclazz.isMemberClass)
             lookupClass
-          else if (jclazz.isLocalClass0 || scalacShouldntLoadClass(jname))
+          else if (jclazz.isLocalClass0)
             // local classes and implementation classes not preserved by unpickling - treat as Java
             //
             // upd. but only if they cannot be loaded as top-level classes
@@ -1161,6 +1161,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       propagatePackageBoundary(jmeth.javaFlags, meth)
       copyAnnotations(meth, jmeth)
       if (jmeth.javaFlags.isVarargs) meth modifyInfo arrayToRepeated
+      if (jmeth.getDefaultValue != null) meth.addAnnotation(AnnotationDefaultAttr)
       markAllCompleted(meth)
       meth
     }

@@ -11,7 +11,7 @@ package collection
 package immutable
 
 import generic._
-import mutable.{Builder, StringBuilder, LazyBuilder, ListBuffer}
+import mutable.{Builder, StringBuilder, LazyBuilder}
 import scala.annotation.tailrec
 import Stream.cons
 import scala.language.implicitConversions
@@ -176,9 +176,9 @@ import scala.language.implicitConversions
  *    loop(1, 1)
  *  }
  *  }}}
- * 
+ *
  *  Note that `mkString` forces evaluation of a `Stream`, but `addString` does
- *  not.  In both cases, a `Stream` that is or ends in a cycle 
+ *  not.  In both cases, a `Stream` that is or ends in a cycle
  *  (e.g. `lazy val s: Stream[Int] = 0 #:: s`) will convert additional trips
  *  through the cycle to `...`.  Additionally, `addString` will display an
  *  un-memoized tail as `?`.
@@ -198,16 +198,13 @@ import scala.language.implicitConversions
  *  @define orderDependentFold
  *  @define willTerminateInf Note: lazily evaluated; will terminate for infinite-sized collections.
  */
-@deprecatedInheritance("This class will be sealed.", "2.11.0")
-abstract class Stream[+A] extends AbstractSeq[A]
+sealed abstract class Stream[+A] extends AbstractSeq[A]
                              with LinearSeq[A]
                              with GenericTraversableTemplate[A, Stream]
                              with LinearSeqOptimized[A, Stream[A]]
-                             with Serializable {
-self =>
-  override def companion: GenericCompanion[Stream] = Stream
+                             with Serializable { self =>
 
-  import scala.collection.{Traversable, Iterable, Seq, IndexedSeq}
+  override def companion: GenericCompanion[Stream] = Stream
 
   /** Indicates whether or not the `Stream` is empty.
    *
@@ -360,7 +357,7 @@ self =>
    * `List(BigInt(12)) ++ fibs`.
    *
    * @tparam B The element type of the returned collection.'''That'''
-   * @param that The [[scala.collection.GenTraversableOnce]] the be concatenated
+   * @param that The [[scala.collection.GenTraversableOnce]] to be concatenated
    * to this `Stream`.
    * @return A new collection containing the result of concatenating `this` with
    * `that`.
@@ -509,21 +506,6 @@ self =>
     else Stream.Empty
   }
 
-  /** Returns all the elements of this `Stream` that satisfy the predicate `p`
-   * in a new `Stream` - i.e., it is still a lazy data structure. The order of
-   * the elements is preserved
-   *
-   *  @param p the predicate used to filter the stream.
-   *  @return the elements of this stream satisfying `p`.
-   *
-   * @example {{{
-   * $naturalsEx
-   * naturalsFrom(1)  10 } filter { _ % 5 == 0 } take 10 mkString(", ")
-   * // produces
-   * }}}
-   */
-  override def filter(p: A => Boolean): Stream[A] = filterImpl(p, isFlipped = false) // This override is only left in 2.11 because of binary compatibility, see PR #3925
-
   /** A FilterMonadic which allows GC of the head of stream during processing */
   @noinline // Workaround SI-9137, see https://github.com/scala/scala/pull/4284#issuecomment-73180791
   override final def withFilter(p: A => Boolean): FilterMonadic[A, Stream[A]] = new Stream.StreamWithFilter(this, p)
@@ -543,7 +525,7 @@ self =>
    *  unless the `f` throws an exception.
    */
   @tailrec
-  override final def foreach[B](f: A => B) {
+  override final def foreach[U](f: A => U) {
     if (!this.isEmpty) {
       f(head)
       tail.foreach(f)
@@ -1106,14 +1088,12 @@ object Stream extends SeqFactory[Stream] {
   /** Creates a new builder for a stream */
   def newBuilder[A]: Builder[A, Stream[A]] = new StreamBuilder[A]
 
-  import scala.collection.{Iterable, Seq, IndexedSeq}
-
   /** A builder for streams
    *  @note This builder is lazy only in the sense that it does not go downs the spine
    *        of traversables that are added as a whole. If more laziness can be achieved,
    *        this builder should be bypassed.
    */
-  class StreamBuilder[A] extends scala.collection.mutable.LazyBuilder[A, Stream[A]] {
+  class StreamBuilder[A] extends LazyBuilder[A, Stream[A]] {
     def result: Stream[A] = parts.toStream flatMap (_.toStream)
   }
 
@@ -1144,7 +1124,7 @@ object Stream extends SeqFactory[Stream] {
     def #:::(prefix: Stream[A]): Stream[A] = prefix append tl
   }
 
-  /** A wrapper method that adds `#::` for cons and `#::: for concat as operations
+  /** A wrapper method that adds `#::` for cons and `#:::` for concat as operations
    *  to streams.
    */
   implicit def consWrapper[A](stream: => Stream[A]): ConsWrapper[A] =

@@ -15,7 +15,7 @@ import CodeGenTools._
 import AsmUtils._
 
 object ProdConsAnalyzerTest extends ClearAfterClass.Clearable {
-  var noOptCompiler = newCompiler(extraArgs = "-Ybackend:GenBCode -Yopt:l:none")
+  var noOptCompiler = newCompiler(extraArgs = "-Yopt:l:none")
 
   def clear(): Unit = {
     noOptCompiler = null
@@ -26,6 +26,7 @@ object ProdConsAnalyzerTest extends ClearAfterClass.Clearable {
 class ProdConsAnalyzerTest extends ClearAfterClass {
   ClearAfterClass.stateToClear = ProdConsAnalyzerTest
   val noOptCompiler = ProdConsAnalyzerTest.noOptCompiler
+  import noOptCompiler.genBCode.bTypes.backendUtils._
 
   def prodToString(producer: AbstractInsnNode) = producer match {
     case p: InitialProducer => p.toString
@@ -204,7 +205,7 @@ class ProdConsAnalyzerTest extends ClearAfterClass {
   def iincProdCons(): Unit = {
     import Opcodes._
     val m = genMethod(descriptor = "(I)I")(
-      Incr(IINC, 1, 1), // producer and cosumer of local variable 1
+      Incr(IINC, 1, 1), // producer and consumer of local variable 1
       VarOp(ILOAD, 1),
       Op(IRETURN)
     )

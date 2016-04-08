@@ -6,9 +6,6 @@
 package scala.tools.nsc
 package typechecker
 
-import scala.collection.mutable
-import scala.reflect.internal.util.{ BatchSourceFile, Statistics }
-import mutable.ListBuffer
 import Mode._
 
 trait TypersTracking {
@@ -159,7 +156,7 @@ trait TypersTracking {
   // Some trees which are typed with mind-numbing frequency and
   // which add nothing by being printed. Did () type to Unit? Let's
   // gamble on yes.
-  private def printingOk(t: Tree) = printTypings && (settings.debug.value || !noPrint(t))
+  def printingOk(t: Tree) = printTypings && (settings.debug.value || !noPrint(t))
   def noPrintTyping(t: Tree) = (t.tpe ne null) || !printingOk(t)
   def noPrintAdapt(tree1: Tree, tree2: Tree) = !printingOk(tree1) || (
        (tree1.tpe == tree2.tpe)

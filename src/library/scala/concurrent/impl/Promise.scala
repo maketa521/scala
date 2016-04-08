@@ -8,13 +8,13 @@
 
 package scala.concurrent.impl
 
-import scala.concurrent.{ ExecutionContext, CanAwait, OnCompleteRunnable, TimeoutException, ExecutionException, blocking }
+import scala.concurrent.{ ExecutionContext, CanAwait, OnCompleteRunnable, TimeoutException, ExecutionException }
 import scala.concurrent.Future.InternalCallbackExecutor
-import scala.concurrent.duration.{ Duration, Deadline, FiniteDuration, NANOSECONDS }
+import scala.concurrent.duration.{ Duration, FiniteDuration }
 import scala.annotation.tailrec
 import scala.util.control.NonFatal
 import scala.util.{ Try, Success, Failure }
-import java.io.ObjectInputStream
+
 import java.util.concurrent.locks.AbstractQueuedSynchronizer
 import java.util.concurrent.atomic.AtomicReference
 
@@ -178,7 +178,9 @@ private[concurrent] object Promise {
    * DefaultPromises, and `linkedRootOf` is currently only designed to be called
    * by Future.flatMap.
    */
-  final class DefaultPromise[T] extends AtomicReference[AnyRef](Nil) with Promise[T] {
+  // Left non-final to enable addition of extra fields by Java/Scala converters
+  // in scala-java8-compat.
+  class DefaultPromise[T] extends AtomicReference[AnyRef](Nil) with Promise[T] {
 
     /** Get the root promise for this promise, compressing the link chain to that
      *  promise if necessary.
@@ -248,12 +250,12 @@ private[concurrent] object Promise {
 
     @throws(classOf[TimeoutException])
     @throws(classOf[InterruptedException])
-    def ready(atMost: Duration)(implicit permit: CanAwait): this.type =
+    final def ready(atMost: Duration)(implicit permit: CanAwait): this.type =
       if (tryAwait(atMost)) this
       else throw new TimeoutException("Futures timed out after [" + atMost + "]")
 
     @throws(classOf[Exception])
-    def result(atMost: Duration)(implicit permit: CanAwait): T =
+    final def result(atMost: Duration)(implicit permit: CanAwait): T =
       ready(atMost).value.get.get // ready throws TimeoutException if timeout so value.get is safe here
 
     def value: Option[Try[T]] = value0
@@ -265,7 +267,7 @@ private[concurrent] object Promise {
       case _ => None
     }
 
-    override def isCompleted: Boolean = isCompleted0
+    override final def isCompleted: Boolean = isCompleted0
 
     @tailrec
     private def isCompleted0: Boolean = get() match {
@@ -274,7 +276,7 @@ private[concurrent] object Promise {
       case _ => false
     }
 
-    def tryComplete(value: Try[T]): Boolean = {
+    final def tryComplete(value: Try[T]): Boolean = {
       val resolved = resolveTry(value)
       tryCompleteAndGetListeners(resolved) match {
         case null             => false
@@ -297,12 +299,12 @@ private[concurrent] object Promise {
       }
     }
 
-    def onComplete[U](func: Try[T] => U)(implicit executor: ExecutionContext): Unit =
+    final def onComplete[U](func: Try[T] => U)(implicit executor: ExecutionContext): Unit =
       dispatchOrAddCallback(new CallbackRunnable[T](executor.prepare(), func))
 
     /** Tries to add the callback, if already completed, it dispatches the callback to be executed.
      *  Used by `onComplete()` to add callbacks to a promise and by `link()` to transfer callbacks
-     *  to the root promise when linking two promises togehter.
+     *  to the root promise when linking two promises together.
      */
     @tailrec
     private def dispatchOrAddCallback(runnable: CallbackRunnable[T]): Unit = {
@@ -391,7 +393,7 @@ private[concurrent] object Promise {
       override def collect[S](pf: PartialFunction[T, S])(implicit executor: ExecutionContext): Future[S] = thisAs[S]
       override def zip[U](that: Future[U]): Future[(T, U)] = thisAs[(T,U)]
       override def zipWith[U, R](that: Future[U])(f: (T, U) => R)(implicit executor: ExecutionContext): Future[R] = thisAs[R]
-      override def fallbackTo[U >: T](that: Future[U]): Future[U] = 
+      override def fallbackTo[U >: T](that: Future[U]): Future[U] =
         if (this eq that) this else that.recoverWith({ case _ => this })(InternalCallbackExecutor)
       override def mapTo[S](implicit tag: ClassTag[S]): Future[S] = thisAs[S]
     }

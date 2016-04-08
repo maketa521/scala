@@ -37,10 +37,13 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.FixedMirrorTreeCreator
     this.FixedMirrorTypeCreator
     this.CompoundTypeTreeOriginalAttachment
+    this.SAMFunction
     this.BackquotedIdentifierAttachment
     this.ForAttachment
     this.SyntheticUnitAttachment
     this.SubpatternsAttachment
+    this.NoInlineCallsiteAttachment
+    this.InlineCallsiteAttachment
     this.noPrint
     this.typeDebug
     this.Range
@@ -106,7 +109,6 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.AnnotationInfo
     this.Annotation
     this.UnmappableAnnotation
-    this.ErroneousAnnotation
     this.ThrownException
     this.typeNames
     this.tpnme
@@ -265,7 +267,9 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.IterableClass
     definitions.ListClass
     definitions.SeqClass
-    definitions.StringBuilderClass
+    definitions.JavaStringBuilderClass
+    definitions.JavaStringBufferClass
+    definitions.JavaCharSequenceClass
     definitions.TraversableClass
     definitions.ListModule
     definitions.NilModule
@@ -281,6 +285,9 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.MethodClass
     definitions.EmptyMethodCacheClass
     definitions.MethodCacheClass
+    definitions.StructuralCallSite
+    definitions.StructuralCallSite_dummy
+    definitions.SymbolLiteral
     definitions.ScalaXmlTopScope
     definitions.ScalaXmlPackage
     definitions.ReflectPackage
@@ -312,7 +319,6 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.QuasiquoteClass_api_unapply
     definitions.ScalaSignatureAnnotation
     definitions.ScalaLongSignatureAnnotation
-    definitions.LambdaMetaFactory
     definitions.MethodHandle
     definitions.OptionClass
     definitions.OptionModule
@@ -370,6 +376,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.BridgeClass
     definitions.ElidableMethodClass
     definitions.ImplicitNotFoundClass
+    definitions.ImplicitAmbiguousClass
     definitions.MigrationAnnotationClass
     definitions.ScalaStrictFPAttr
     definitions.SwitchClass
@@ -422,6 +429,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.boxedClass
     definitions.refClass
     definitions.volatileRefClass
+    definitions.allRefClasses
     definitions.UnitClass
     definitions.ByteClass
     definitions.ShortClass
@@ -444,7 +452,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.ScalaValueClassesNoUnit
     definitions.ScalaValueClasses
 
-
+    uncurry.DesugaredParameterType
     erasure.GenericArray
     erasure.scalaErasure
     erasure.specialScalaErasure

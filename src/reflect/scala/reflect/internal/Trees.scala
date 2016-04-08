@@ -8,7 +8,7 @@ package reflect
 package internal
 
 import Flags._
-import scala.collection.{ mutable, immutable }
+import scala.collection.mutable
 import scala.reflect.macros.Attachments
 import util.Statistics
 
@@ -1161,6 +1161,10 @@ trait Trees extends api.Trees {
   def Super(sym: Symbol, mix: TypeName): Tree =
     Super(This(sym), mix)
 
+  /** Selection of a method in an arbitrary ancestor */
+  def SuperSelect(clazz: Symbol, sym: Symbol): Tree =
+    Select(Super(clazz, tpnme.EMPTY), sym)
+
   def This(sym: Symbol): Tree =
     This(sym.name.toTypeName) setSymbol sym
 
@@ -1418,7 +1422,7 @@ trait Trees extends api.Trees {
                            transformTypeDefs(tparams), transform(rhs))
         }
       case LabelDef(name, params, rhs) =>
-        treeCopy.LabelDef(tree, name, transformIdents(params), transform(rhs)) //bq: Martin, once, atOwner(...) works, also change `LamdaLifter.proxy'
+        treeCopy.LabelDef(tree, name, transformIdents(params), transform(rhs)) //bq: Martin, once, atOwner(...) works, also change `LambdaLifter.proxy'
       case PackageDef(pid, stats) =>
         treeCopy.PackageDef(
           tree, transform(pid).asInstanceOf[RefTree],
@@ -1468,8 +1472,10 @@ trait Trees extends api.Trees {
 
   class ChangeOwnerTraverser(val oldowner: Symbol, val newowner: Symbol) extends Traverser {
     final def change(sym: Symbol) = {
-      if (sym != NoSymbol && sym.owner == oldowner)
+      if (sym != NoSymbol && sym.owner == oldowner) {
         sym.owner = newowner
+        if (sym.isModule) sym.moduleClass.owner = newowner
+      }
     }
     override def traverse(tree: Tree) {
       tree match {
@@ -1601,7 +1607,7 @@ trait Trees extends api.Trees {
           case _          =>
             // no special handling is required for Function or Import nodes here.
             // as they don't have interesting infos attached to their symbols.
-            // Subsitution of the referenced symbol of Return nodes is handled
+            // Substitution of the referenced symbol of Return nodes is handled
             // in .ChangeOwnerTraverser
         }
         tree match {
@@ -1617,20 +1623,8 @@ trait Trees extends api.Trees {
     }
     def apply[T <: Tree](tree: T): T = {
       val tree1 = transform(tree)
-      invalidateSingleTypeCaches(tree1)
+      invalidateTreeTpeCaches(tree1, mutatedSymbols)
       tree1.asInstanceOf[T]
-    }
-    private def invalidateSingleTypeCaches(tree: Tree): Unit = {
-      if (mutatedSymbols.nonEmpty)
-        for (t <- tree if t.tpe != null)
-          for (tp <- t.tpe) {
-            tp match {
-              case s: SingleType if mutatedSymbols contains s.sym =>
-                s.underlyingPeriod = NoPeriod
-                s.underlyingCache = NoType
-              case _ =>
-            }
-          }
     }
     override def toString() = "TreeSymSubstituter/" + substituterString("Symbol", "Symbol", from, to)
   }

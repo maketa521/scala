@@ -8,9 +8,9 @@ package scala
 package tools.nsc.transform.patmat
 
 import scala.language.postfixOps
+
 import scala.collection.mutable
 import scala.reflect.internal.util.{NoPosition, Position, Statistics, HashSet}
-import scala.tools.nsc.Global
 
 trait Logic extends Debugging  {
   import PatternMatchingStats._
@@ -38,7 +38,7 @@ trait Logic extends Debugging  {
     padded.transpose.map(alignedColumns).transpose map (_.mkString(sep)) mkString(lineSep)
   }
 
-  // http://www.cis.upenn.edu/~cis510/tcl/chap3.pdf
+  // ftp://ftp.cis.upenn.edu/pub/cis511/public_html/Spring04/chap3.pdf
   // http://users.encs.concordia.ca/~ta_ahmed/ms_thesis.pdf
   // propositional logic with constants and equality
   trait PropositionalLogic {
@@ -542,7 +542,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
          *
          * (0) A or B must be in the domain to draw any conclusions.
          *
-         *     For example, knowing the the scrutinee is *not* true does not
+         *     For example, knowing the scrutinee is *not* true does not
          *     statically exclude it from being `X`, because that is an opaque
          *     Boolean.
          *
@@ -646,7 +646,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
     }
 
 
-    import global.{ConstantType, Constant, EmptyScope, SingletonType, Literal, Ident, refinedType, singleType, TypeBounds, NoSymbol}
+    import global.{ConstantType, SingletonType, Literal, Ident, singleType, TypeBounds, NoSymbol}
     import global.definitions._
 
 
@@ -691,7 +691,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
           // if X is mutable.
           freshExistentialSubtype(t.tpe)
         }
-        else trees find (a => a.correspondsStructure(t)(sameValue)) match {
+        else trees find (a => equivalentTree(a, t)) match {
           case Some(orig) =>
             debug.patmat("unique tp for tree: " + ((orig, orig.tpe)))
             orig.tpe

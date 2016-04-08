@@ -19,10 +19,13 @@ import BackendReporting._
 import scala.collection.convert.decorateAsScala._
 
 object InlineInfoTest extends ClearAfterClass.Clearable {
-  var compiler = newCompiler(extraArgs = "-Ybackend:GenBCode -Yopt:l:classpath")
+  var compiler = newCompiler(extraArgs = "-Yopt:l:classpath")
   def clear(): Unit = { compiler = null }
 
-  def notPerRun: List[Clearable] = List(compiler.genBCode.bTypes.classBTypeFromInternalName, compiler.genBCode.bTypes.byteCodeRepository.classes)
+  def notPerRun: List[Clearable] = List(
+    compiler.genBCode.bTypes.classBTypeFromInternalName,
+    compiler.genBCode.bTypes.byteCodeRepository.compilingClasses,
+    compiler.genBCode.bTypes.byteCodeRepository.parsedClasses)
   notPerRun foreach compiler.perRunCaches.unrecordCache
 }
 
@@ -57,6 +60,7 @@ class InlineInfoTest extends ClearAfterClass {
         |class C extends T with U
       """.stripMargin
     val classes = compile(code)
+
     val fromSyms = classes.map(c => compiler.genBCode.bTypes.classBTypeFromInternalName(c.name).info.get.inlineInfo)
 
     val fromAttrs = classes.map(c => {

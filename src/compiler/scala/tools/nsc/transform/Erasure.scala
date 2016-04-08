@@ -71,7 +71,9 @@ abstract class Erasure extends AddInterfaces
   }
 
   override protected def verifyJavaErasure = settings.Xverify || settings.debug
-  def needsJavaSig(tp: Type) = !settings.Ynogenericsig && NeedsSigCollector.collect(tp)
+  def needsJavaSig(tp: Type, throwsArgs: List[Type]) = !settings.Ynogenericsig && {
+    NeedsSigCollector.collect(tp) || throwsArgs.exists(NeedsSigCollector.collect)
+  }
 
   // only refer to type params that will actually make it into the sig, this excludes:
   // * higher-order type parameters
@@ -251,7 +253,7 @@ abstract class Erasure extends AddInterfaces
     // Anything which could conceivably be a module (i.e. isn't known to be
     // a type parameter or similar) must go through here or the signature is
     // likely to end up with Foo<T>.Empty where it needs Foo<T>.Empty$.
-    def fullNameInSig(sym: Symbol) = "L" + enteringIcode(sym.javaBinaryName)
+    def fullNameInSig(sym: Symbol) = "L" + enteringJVM(sym.javaBinaryName)
 
     def jsig(tp0: Type, existentiallyBound: List[Symbol] = Nil, toplevel: Boolean = false, primitiveOK: Boolean = true): String = {
       val tp = tp0.dealias
@@ -277,7 +279,7 @@ abstract class Erasure extends AddInterfaces
             val preRebound = pre.baseType(sym.owner) // #2585
             dotCleanup(
               (
-                if (needsJavaSig(preRebound)) {
+                if (needsJavaSig(preRebound, Nil)) {
                   val s = jsig(preRebound, existentiallyBound)
                   if (s.charAt(0) == 'L') s.substring(0, s.length - 1) + "." + sym.javaSimpleName
                   else fullNameInSig(sym)
@@ -356,8 +358,9 @@ abstract class Erasure extends AddInterfaces
           else jsig(etp)
       }
     }
-    if (needsJavaSig(info)) {
-      try Some(jsig(info, toplevel = true))
+    val throwsArgs = sym0.annotations flatMap ThrownException.unapply
+    if (needsJavaSig(info, throwsArgs)) {
+      try Some(jsig(info, toplevel = true) + throwsArgs.map("^" + jsig(_, toplevel = true)).mkString(""))
       catch { case ex: UnknownSig => None }
     }
     else None
@@ -575,8 +578,9 @@ abstract class Erasure extends AddInterfaces
   }
 
   /** The modifier typer which retypes with erased types. */
-  class Eraser(_context: Context) extends Typer(_context) with TypeAdapter {
-    val typer = this.asInstanceOf[analyzer.Typer]
+  class Eraser(_context: Context) extends Typer(_context) {
+    val typeAdapter = new TypeAdapter { def typedPos(pos: Position)(tree: Tree): Tree = Eraser.this.typedPos(pos)(tree) }
+    import typeAdapter._
 
     override protected def stabilize(tree: Tree, pre: Type, mode: Mode, pt: Type): Tree = tree
 
@@ -644,7 +648,7 @@ abstract class Erasure extends AddInterfaces
             var qual1 = typedQualifier(qual)
             if ((isPrimitiveValueType(qual1.tpe) && !isPrimitiveValueMember(tree.symbol)) ||
                  isErasedValueType(qual1.tpe))
-              qual1 = box(qual1, "owner "+tree.symbol.owner)
+              qual1 = box(qual1)
             else if (!isPrimitiveValueType(qual1.tpe) && isPrimitiveValueMember(tree.symbol))
               qual1 = unbox(qual1, tree.symbol.owner.tpe)
 
@@ -653,13 +657,12 @@ abstract class Erasure extends AddInterfaces
             if (isPrimitiveValueMember(tree.symbol) && !isPrimitiveValueType(qual1.tpe)) {
               tree.symbol = NoSymbol
               selectFrom(qual1)
-            } else if (isMethodTypeWithEmptyParams(qual1.tpe)) {
+            } else if (isMethodTypeWithEmptyParams(qual1.tpe)) { // see also adaptToType in TypeAdapter
               assert(qual1.symbol.isStable, qual1.symbol)
-              val applied = Apply(qual1, List()) setPos qual1.pos setType qual1.tpe.resultType
-              adaptMember(selectFrom(applied))
+              adaptMember(selectFrom(applyMethodWithEmptyParams(qual1)))
             } else if (!(qual1.isInstanceOf[Super] || (qual1.tpe.typeSymbol isSubClass tree.symbol.owner))) {
               assert(tree.symbol.owner != ArrayClass)
-              selectFrom(cast(qual1, tree.symbol.owner.tpe))
+              selectFrom(cast(qual1, tree.symbol.owner.tpe.resultType))
             } else {
               selectFrom(qual1)
             }
@@ -718,6 +721,12 @@ abstract class Erasure extends AddInterfaces
         if (branch == EmptyTree) branch else adaptToType(branch, tree1.tpe)
 
       tree1 match {
+        case fun: Function =>
+          fun.attachments.get[SAMFunction] match {
+            case Some(SAMFunction(samTp, _)) => fun setType specialScalaErasure(samTp)
+            case _ => fun
+          }
+
         case If(cond, thenp, elsep) =>
           treeCopy.If(tree1, cond, adaptBranch(thenp), adaptBranch(elsep))
         case Match(selector, cases) =>
@@ -1100,7 +1109,6 @@ abstract class Erasure extends AddInterfaces
             }
           } else tree
         case Template(parents, self, body) =>
-          assert(!currentOwner.isImplClass)
           //Console.println("checking no dble defs " + tree)//DEBUG
           checkNoDoubleDefs(tree.symbol.owner)
           treeCopy.Template(tree, parents, noSelfType, addBridges(body, currentOwner))
@@ -1110,7 +1118,7 @@ abstract class Erasure extends AddInterfaces
 
         case Literal(ct) if ct.tag == ClazzTag
                          && ct.typeValue.typeSymbol != definitions.UnitClass =>
-          val erased = ct.typeValue match {
+          val erased = ct.typeValue.dealiasWiden match {
             case tr @ TypeRef(_, clazz, _) if clazz.isDerivedValueClass => scalaErasure.eraseNormalClassRef(tr)
             case tpe => specialScalaErasure(tpe)
           }
@@ -1147,6 +1155,8 @@ abstract class Erasure extends AddInterfaces
             case DefDef(_, _, _, _, tpt, _) =>
               try super.transform(tree1).clearType()
               finally tpt setType specialErasure(tree1.symbol)(tree1.symbol.tpe).resultType
+            case ApplyDynamic(qual, Literal(Constant(boostrapMethodRef: Symbol)) :: _) =>
+              tree
             case _ =>
               super.transform(tree1).clearType()
           }
@@ -1175,6 +1185,42 @@ abstract class Erasure extends AddInterfaces
     log(s"Expanding name of ${sym.debugLocationString} as it clashes with bridge. Renaming deemed safe because the owner is anonymous.")
     sym.expandName(sym.owner)
     bridge.resetFlag(BRIDGE)
+  }
+
+  /** Does this symbol compile to the underlying platform's notion of an interface,
+    * without requiring compiler magic before it can be instantiated?
+    *
+    * More specifically, we're interested in whether LambdaMetaFactory can instantiate this type,
+    * assuming it has a single abstract method. In other words, if we were to mix this
+    * trait into a class, it should not result in any compiler-generated members having to be
+    * implemented in ("mixed in to") this class (except for the SAM).
+    *
+    * Thus, the type must erase to a java interface, either by virtue of being defined as one,
+    * or by being a trait that:
+    *   - is static (explicitouter or lambdalift may add disqualifying members)
+    *   - extends only other traits that compile to pure interfaces (except for Any)
+    *   - has no val/var members
+    *
+    * TODO: can we speed this up using the INTERFACE flag, or set it correctly by construction?
+    */
+  final def compilesToPureInterface(tpSym: Symbol): Boolean = {
+    def ok(sym: Symbol) =
+      sym.isJavaInterface ||
+      sym.isTrait &&
+      // Unless sym.isStatic, even if the constructor is zero-argument now, it may acquire arguments in explicit outer or lambdalift.
+      // This is an impl restriction to simplify the decision of whether to expand the SAM during uncurry
+      // (when we don't yet know whether it will receive an outer pointer in explicit outer or whether lambda lift will add proxies for captures).
+      // When we delay sam expansion until after explicit outer & lambda lift, we could decide there whether
+      // to expand sam at compile time or use LMF, and this implementation restriction could be lifted.
+      sym.isStatic &&
+      // HACK: this is to rule out traits with an effectful initializer.
+      // The constructor only exists if the trait's template has statements.
+      // Sadly, we can't be more precise without access to the tree that defines the SAM's owner.
+      !sym.primaryConstructor.exists &&
+      (sym.isInterface || sym.info.decls.forall(mem => mem.isMethod || mem.isType)) // TODO OPT: && {sym setFlag INTERFACE; true})
+
+    // we still need to check our ancestors even if the INTERFACE flag is set, as it doesn't take inheritance into account
+    ok(tpSym) && tpSym.ancestors.forall(sym => (sym eq AnyClass) || (sym eq ObjectClass) || ok(sym))
   }
 
   private class TypeRefAttachment(val tpe: TypeRef)

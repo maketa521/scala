@@ -3,8 +3,6 @@ package reflect
 package internal
 package transform
 
-import Flags.{PARAMACCESSOR, METHOD}
-
 trait Erasure {
 
   val global: SymbolTable
@@ -90,7 +88,7 @@ trait Erasure {
     }
   }
 
-  /** Does this vakue class have an underlying type that's a type parameter of
+  /** Does this value class have an underlying type that's a type parameter of
    *  the class itself?
    *  This method needs to be called at a phase no later than erasurephase
    */
@@ -114,8 +112,9 @@ trait Erasure {
     protected def eraseDerivedValueClassRef(tref: TypeRef): Type = erasedValueClassArg(tref)
 
     def apply(tp: Type): Type = tp match {
-      case ConstantType(_) =>
-        tp
+      case ConstantType(ct) =>
+        if (ct.tag == ClazzTag) ConstantType(Constant(apply(ct.typeValue)))
+        else tp
       case st: ThisType if st.sym.isPackageClass =>
         tp
       case st: SubType =>
@@ -123,7 +122,7 @@ trait Erasure {
       case tref @ TypeRef(pre, sym, args) =>
         if (sym == ArrayClass)
           if (unboundedGenericArrayLevel(tp) == 1) ObjectTpe
-          else if (args.head.typeSymbol.isBottomClass) arrayType(ObjectTpe)
+          else if (args.head.typeSymbol.isBottomClass)  arrayType(ObjectTpe)
           else typeRef(apply(pre), sym, args map applyInArray)
         else if (sym == AnyClass || sym == AnyValClass || sym == SingletonClass) ObjectTpe
         else if (sym == UnitClass) BoxedUnitTpe

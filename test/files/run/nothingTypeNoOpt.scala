@@ -1,6 +1,6 @@
 // See comment in BCodeBodyBuilder
 
-// -target:jvm-1.6 -Ybackend:GenBCode -Yopt:l:none
+// -target:jvm-1.6 -Yopt:l:none
 // target enables stack map frame generation
 
 class C {
@@ -26,7 +26,7 @@ class C {
   }
 
   def f5(x: Boolean) = {
-    // stack heights need to be the smae. ??? looks to the jvm like returning a value of
+    // stack heights need to be the same. ??? looks to the jvm like returning a value of
     // type Nothing$, need to drop or throw it.
     println(
       if (x) { ???; 10 }

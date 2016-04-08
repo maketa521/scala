@@ -7,11 +7,11 @@ package scala
 package reflect
 package internal
 
+import scala.language.implicitConversions
+
 import java.security.MessageDigest
-import java.util.UUID.randomUUID
 import Chars.isOperatorPart
 import scala.annotation.switch
-import scala.language.implicitConversions
 import scala.collection.immutable
 import scala.io.Codec
 
@@ -104,7 +104,6 @@ trait StdNames {
     val ANON_FUN_NAME: NameType                = "$anonfun"
     val EMPTY: NameType                        = ""
     val EMPTY_PACKAGE_NAME: NameType           = "<empty>"
-    val IMPL_CLASS_SUFFIX                      = "$class"
     val IMPORT: NameType                       = "<import>"
     val MODULE_SUFFIX_NAME: NameType           = MODULE_SUFFIX_STRING
     val MODULE_VAR_SUFFIX: NameType            = "$module"
@@ -291,6 +290,7 @@ trait StdNames {
     final val DeprecatedATTR: NameType             = "Deprecated"
     final val ExceptionsATTR: NameType             = "Exceptions"
     final val InnerClassesATTR: NameType           = "InnerClasses"
+    final val MethodParametersATTR: NameType       = "MethodParameters"
     final val RuntimeAnnotationATTR: NameType      = "RuntimeVisibleAnnotations"   // RetentionPolicy.RUNTIME
     final val ScalaATTR: NameType                  = "Scala"
     final val ScalaSignatureATTR: NameType         = "ScalaSig"
@@ -302,8 +302,6 @@ trait StdNames {
 
     def dropSingletonName(name: Name): TypeName = (name dropRight SINGLETON_SUFFIX.length).toTypeName
     def singletonName(name: Name): TypeName     = (name append SINGLETON_SUFFIX).toTypeName
-    def implClassName(name: Name): TypeName     = (name append IMPL_CLASS_SUFFIX).toTypeName
-    def interfaceName(implname: Name): TypeName = (implname dropRight IMPL_CLASS_SUFFIX.length).toTypeName
   }
 
   abstract class TermNames extends Keywords with TermNamesApi {
@@ -377,7 +375,6 @@ trait StdNames {
 
     def isConstructorName(name: Name)       = name == CONSTRUCTOR || name == MIXIN_CONSTRUCTOR
     def isExceptionResultName(name: Name)   = name startsWith EXCEPTION_RESULT_PREFIX
-    def isImplClassName(name: Name)         = name endsWith IMPL_CLASS_SUFFIX
     def isLocalDummyName(name: Name)        = name startsWith LOCALDUMMY_PREFIX
     def isLocalName(name: Name)             = name endsWith LOCAL_SUFFIX_STRING
     def isLoopHeaderLabel(name: Name)       = (name startsWith WHILE_PREFIX) || (name startsWith DO_WHILE_PREFIX)
@@ -695,6 +692,7 @@ trait StdNames {
     val freshTermName: NameType        = "freshTermName"
     val freshTypeName: NameType        = "freshTypeName"
     val get: NameType                  = "get"
+    val parameterTypes: NameType       = "parameterTypes"
     val hashCode_ : NameType           = "hashCode"
     val hash_ : NameType               = "hash"
     val head : NameType                = "head"
@@ -876,7 +874,7 @@ trait StdNames {
     val toCharacter: NameType = "toCharacter"
     val toInteger: NameType   = "toInteger"
 
-    def newLazyValSlowComputeName(lzyValName: Name) = lzyValName append LAZY_SLOW_SUFFIX
+    def newLazyValSlowComputeName(lzyValName: Name) = (lzyValName stripSuffix MODULE_VAR_SUFFIX append LAZY_SLOW_SUFFIX).toTermName
 
     // ASCII names for operators
     val ADD       = encode("+")
@@ -1169,6 +1167,7 @@ trait StdNames {
     final val InvokeExact: TermName      = newTermName("invokeExact")
 
     final val AltMetafactory: TermName      = newTermName("altMetafactory")
+    final val Bootstrap: TermName           = newTermName("bootstrap")
 
     val Boxed = immutable.Map[TypeName, TypeName](
       tpnme.Boolean -> BoxedBoolean,

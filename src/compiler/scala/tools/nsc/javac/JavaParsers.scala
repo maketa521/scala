@@ -264,7 +264,8 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
         }
       }
 
-    def typ(): Tree =
+    def typ(): Tree = {
+      annotations()
       optArrayBrackets {
         if (in.token == FINAL) in.nextToken()
         if (in.token == IDENTIFIER) {
@@ -287,6 +288,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
           basicType()
         }
       }
+    }
 
     def typeArgs(t: Tree): Tree = {
       val wildcards = new ListBuffer[TypeDef]
@@ -370,7 +372,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
             flags |= Flags.FINAL
             in.nextToken()
           case DEFAULT =>
-            flags |= Flags.DEFAULTMETHOD
+            flags |= Flags.JAVA_DEFAULTMETHOD
             in.nextToken()
           case NATIVE =>
             addAnnot(NativeAttr)
@@ -404,6 +406,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
 
     def typeParam(): TypeDef =
       atPos(in.currentPos) {
+        annotations()
         val name = identForType()
         val hi = if (in.token == EXTENDS) { in.nextToken() ; bound() } else EmptyTree
         TypeDef(Modifiers(Flags.JAVA | Flags.DEFERRED | Flags.PARAM), name, Nil, TypeBoundsTree(EmptyTree, hi))
@@ -489,7 +492,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
           val vparams = formalParams()
           if (!isVoid) rtpt = optArrayBrackets(rtpt)
           optThrows()
-          val isConcreteInterfaceMethod = !inInterface || (mods hasFlag Flags.DEFAULTMETHOD) || (mods hasFlag Flags.STATIC)
+          val isConcreteInterfaceMethod = !inInterface || (mods hasFlag Flags.JAVA_DEFAULTMETHOD) || (mods hasFlag Flags.STATIC)
           val bodyOk = !(mods1 hasFlag Flags.DEFERRED) && isConcreteInterfaceMethod
           val body =
             if (bodyOk && in.token == LBRACE) {
@@ -509,7 +512,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
                 EmptyTree
               }
             }
-          // for abstract methods (of classes), the `DEFERRED` flag is alredy set.
+          // for abstract methods (of classes), the `DEFERRED` flag is already set.
           // here we also set it for interface methods that are not static and not default.
           if (!isConcreteInterfaceMethod) mods1 |= Flags.DEFERRED
           List {
@@ -751,7 +754,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
       val (statics, body) = typeBody(AT, name)
       val templ = makeTemplate(annotationParents, body)
       addCompanionObject(statics, atPos(pos) {
-        ClassDef(mods, name, List(), templ)
+        ClassDef(mods | Flags.JAVA_ANNOTATION, name, List(), templ)
       })
     }
 
@@ -800,16 +803,10 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
       val superclazz =
         AppliedTypeTree(javaLangDot(tpnme.Enum), List(enumType))
       val finalFlag = if (enumIsFinal) Flags.FINAL else 0l
-      val abstractFlag = {
-        // javac adds `ACC_ABSTRACT` to enum classes with deferred members
-        val hasAbstractMember = body exists {
-          case d: DefDef => d.mods.isDeferred
-          case _         => false
-        }
-        if (hasAbstractMember) Flags.ABSTRACT else 0l
-      }
       addCompanionObject(consts ::: statics ::: predefs, atPos(pos) {
-        ClassDef(mods | Flags.ENUM | finalFlag | abstractFlag, name, List(),
+        // Marking the enum class SEALED | ABSTRACT enables exhaustiveness checking. See also ClassfileParser.
+        // This is a bit of a hack and requires excluding the ABSTRACT flag in the backend, see method javaClassfileFlags.
+        ClassDef(mods | Flags.JAVA_ENUM | Flags.SEALED | Flags.ABSTRACT | finalFlag, name, List(),
                  makeTemplate(superclazz :: interfaces, body))
       })
     }
@@ -830,7 +827,7 @@ trait JavaParsers extends ast.parser.ParsersCommon with JavaScanners {
           skipAhead()
           accept(RBRACE)
         }
-        ValDef(Modifiers(Flags.ENUM | Flags.STABLE | Flags.JAVA | Flags.STATIC), name.toTermName, enumType, blankExpr)
+        ValDef(Modifiers(Flags.JAVA_ENUM | Flags.STABLE | Flags.JAVA | Flags.STATIC), name.toTermName, enumType, blankExpr)
       }
       (res, hasClassBody)
     }

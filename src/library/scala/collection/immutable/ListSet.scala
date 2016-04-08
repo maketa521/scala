@@ -11,8 +11,8 @@ package collection
 package immutable
 
 import generic._
-import scala.annotation.{tailrec, bridge}
-import mutable.{ ListBuffer, Builder }
+import scala.annotation.tailrec
+import mutable.{Builder, ReusableBuilder}
 
 /** $factoryInfo
  *  @define Coll immutable.ListSet
@@ -32,8 +32,10 @@ object ListSet extends ImmutableSetFactory[ListSet] {
    *  a time to a list backed set puts the "squared" in N^2.  There is a
    *  temporary space cost, but it's improbable a list backed set could
    *  become large enough for this to matter given its pricy element lookup.
+   *
+   *  This builder is reusable.
    */
-  class ListSetBuilder[Elem](initial: ListSet[Elem]) extends Builder[Elem, ListSet[Elem]] {
+  class ListSetBuilder[Elem](initial: ListSet[Elem]) extends ReusableBuilder[Elem, ListSet[Elem]] {
     def this() = this(empty[Elem])
     protected val elems = (new mutable.ListBuffer[Elem] ++= initial).reverse
     protected val seen  = new mutable.HashSet[Elem] ++= initial
@@ -65,8 +67,7 @@ object ListSet extends ImmutableSetFactory[ListSet] {
  *  @define mayNotTerminateInf
  *  @define willNotTerminateInf
  */
-@deprecatedInheritance("The semantics of immutable collections makes inheriting from ListSet error-prone.", "2.11.0")
-class ListSet[A] extends AbstractSet[A]
+sealed class ListSet[A] extends AbstractSet[A]
                     with Set[A]
                     with GenericSetTemplate[A, ListSet]
                     with SetLike[A, ListSet[A]]
@@ -138,13 +139,6 @@ class ListSet[A] extends AbstractSet[A]
 
   override def stringPrefix = "ListSet"
 
-  /** Returns this $coll as an immutable set.
-   *  
-   *  A new set will not be built; lazy collections will stay lazy.
-   */
-  @deprecatedOverriding("Immutable sets should do nothing on toSet but return themselves cast as a Set.", "2.11.0")
-  override def toSet[B >: A]: Set[B] = this.asInstanceOf[Set[B]]
-
   /** Represents an entry in the `ListSet`.
    */
   protected class Node(override val head: A) extends ListSet[A] with Serializable {
@@ -186,4 +180,6 @@ class ListSet[A] extends AbstractSet[A]
 
     override def tail: ListSet[A] = self
   }
+
+  override def toSet[B >: A]: Set[B] = this.asInstanceOf[ListSet[B]]
 }

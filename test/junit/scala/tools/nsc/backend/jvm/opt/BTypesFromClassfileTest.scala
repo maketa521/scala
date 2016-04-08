@@ -22,7 +22,7 @@ import scala.collection.convert.decorateAsScala._
 @RunWith(classOf[JUnit4])
 class BTypesFromClassfileTest {
   // inliner enabled -> inlineInfos are collected (and compared) in ClassBTypes
-  val compiler = newCompiler(extraArgs = "-Ybackend:GenBCode -Yopt:inline-global")
+  val compiler = newCompiler(extraArgs = "-Yopt:inline-global")
 
   import compiler._
   import definitions._
@@ -67,7 +67,19 @@ class BTypesFromClassfileTest {
     // there's a separate InlineInfoTest.
 
     val chk1 = sameBTypes(fromSym.superClass, fromClassfile.superClass, checked)
-    val chk2 = sameBTypes(fromSym.interfaces, fromClassfile.interfaces, chk1)
+    
+    // was:
+    // val chk2 = sameBTypes(fromSym.interfaces, fromClassfile.interfaces, chk1)
+
+    // TODO: The new trait encoding emits redundant parents in the backend to avoid linkage errors in invokespecial
+    // Need to give this some more thought, maybe do it earlier so it is reflected in the Symbol's info, too.
+    val fromSymInterfaces = fromSym.interfaces
+    val fromClassFileInterfaces = fromClassfile.interfaces
+    val (matching, other) = fromClassFileInterfaces.partition(x => fromSymInterfaces.exists(_.internalName == x.internalName))
+    val chk2 = sameBTypes(fromSym.interfaces, matching, chk1)
+    for (redundant <- other) {
+      assert(matching.exists(x => x.isSubtypeOf(redundant).orThrow), redundant)
+    }
 
     // The fromSym info has only member classes, no local or anonymous. The symbol is read from the
     // Scala pickle data and only member classes are created / entered.

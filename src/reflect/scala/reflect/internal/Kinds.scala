@@ -7,7 +7,6 @@ package scala
 package reflect
 package internal
 
-import scala.collection.{ mutable, immutable }
 import scala.reflect.internal.util.StringOps.{ countAsString, countElementsAsString }
 
 trait Kinds {
@@ -237,7 +236,7 @@ trait Kinds {
    *
    * Proper types are represented using ProperTypeKind.
    *
-   * Type constructors are reprented using TypeConKind.
+   * Type constructors are represented using TypeConKind.
    */
   abstract class Kind {
     import Kind.StringState

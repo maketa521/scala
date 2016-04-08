@@ -31,8 +31,7 @@ import scala.annotation.tailrec
  *  @define coll immutable hash set
  */
 @SerialVersionUID(2L)
-@deprecatedInheritance("The implementation details of immutable hash sets make inheriting from them unwise.", "2.11.0")
-class HashSet[A] extends AbstractSet[A]
+sealed class HashSet[A] extends AbstractSet[A]
                     with Set[A]
                     with GenericSetTemplate[A, HashSet]
                     with SetLike[A, HashSet[A]]
@@ -53,7 +52,7 @@ class HashSet[A] extends AbstractSet[A]
 
   def iterator: Iterator[A] = Iterator.empty
 
-  override def foreach[U](f: A =>  U): Unit = { }
+  override def foreach[U](f: A => U): Unit = ()
 
   def contains(e: A): Boolean = get0(e, computeHash(e), 0)
 
@@ -162,12 +161,7 @@ class HashSet[A] extends AbstractSet[A]
   def - (e: A): HashSet[A] =
     nullToEmpty(removed0(e, computeHash(e), 0))
 
-  /** Returns this $coll as an immutable set.
-   *  
-   *  A new set will not be built; lazy collections will stay lazy.
-   */
-  @deprecatedOverriding("Immutable sets should do nothing on toSet but return themselves cast as a Set.", "2.11.0")
-  override def toSet[B >: A]: Set[B] = this.asInstanceOf[Set[B]]
+  override def tail: HashSet[A] = this - head
 
   override def filter(p: A => Boolean) = {
     val buffer = new Array[HashSet[A]](bufferSize(size))
@@ -201,6 +195,7 @@ class HashSet[A] extends AbstractSet[A]
 
   protected def writeReplace(): AnyRef = new HashSet.SerializationProxy(this)
 
+  override def toSet[B >: A]: Set[B] = this.asInstanceOf[HashSet[B]]
 }
 
 /** $factoryInfo
@@ -219,9 +214,12 @@ object HashSet extends ImmutableSetFactory[HashSet] {
   /** $setCanBuildFromInfo */
   implicit def canBuildFrom[A]: CanBuildFrom[Coll, A, HashSet[A]] = setCanBuildFrom[A]
 
-  private object EmptyHashSet extends HashSet[Any] { }
+  private object EmptyHashSet extends HashSet[Any] {
+    override def head: Any = throw new NoSuchElementException("Empty Set")
+    override def tail: HashSet[Any] = throw new NoSuchElementException("Empty Set")
+  }
   private[collection] def emptyInstance: HashSet[Any] = EmptyHashSet
-  
+
   // utility method to create a HashTrieSet from two leaf HashSets (HashSet1 or HashSetCollision1) with non-colliding hash code)
   private def makeHashTrieSet[A](hash0:Int, elem0:HashSet[A], hash1:Int, elem1:HashSet[A], level:Int) : HashTrieSet[A] = {
     val index0 = (hash0 >>> level) & 0x1f
@@ -972,7 +970,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       final override def getElem(cc: AnyRef): A = cc.asInstanceOf[HashSet1[A]].key
     }
 
-    override def foreach[U](f: A =>  U): Unit = {
+    override def foreach[U](f: A => U): Unit = {
       var i = 0
       while (i < elems.length) {
         elems(i).foreach(f)

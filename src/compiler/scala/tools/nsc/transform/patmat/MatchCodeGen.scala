@@ -6,9 +6,9 @@
 
 package scala.tools.nsc.transform.patmat
 
-import scala.tools.nsc.symtab.Flags.SYNTHETIC
 import scala.language.postfixOps
-import scala.reflect.internal.util.Statistics
+
+import scala.tools.nsc.symtab.Flags.SYNTHETIC
 import scala.reflect.internal.util.Position
 
 /** Factory methods used by TreeMakers to make the actual trees.
@@ -55,7 +55,15 @@ trait MatchCodeGen extends Interface {
       def flatMap(prev: Tree, b: Symbol, next: Tree): Tree
       def flatMapCond(cond: Tree, res: Tree, nextBinder: Symbol, next: Tree): Tree
       def flatMapGuard(cond: Tree, next: Tree): Tree
-      def ifThenElseZero(c: Tree, thenp: Tree): Tree = IF (c) THEN thenp ELSE zero
+      def ifThenElseZero(c: Tree, thenp: Tree): Tree = {
+        val z = zero
+        thenp match {
+          case If(c1, thenp1, elsep1) if z equalsStructure elsep1 =>
+            If(c AND c1, thenp1, elsep1) // cleaner, leaner trees
+          case _ =>
+            If(c, thenp, zero)
+        }
+      }
       protected def zero: Tree
     }
 
@@ -134,7 +142,7 @@ trait MatchCodeGen extends Interface {
   trait OptimizedCodegen extends CodegenCore with TypedSubstitution with MatchMonadInterface {
     override def codegen: AbsCodegen = optimizedCodegen
 
-    // when we know we're targetting Option, do some inlining the optimizer won't do
+    // when we know we're targeting Option, do some inlining the optimizer won't do
     // for example, `o.flatMap(f)` becomes `if(o == None) None else f(o.get)`, similarly for orElse and guard
     //   this is a special instance of the advanced inlining optimization that takes a method call on
     //   an object of a type that only has two concrete subclasses, and inlines both bodies, guarded by an if to distinguish the two cases

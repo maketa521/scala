@@ -84,6 +84,9 @@ abstract class ClassfileParser {
   protected final def u2(): Int = in.nextChar.toInt
   protected final def u4(): Int = in.nextInt
 
+  protected final def s1(): Int = in.nextByte.toInt // sign-extend the byte to int
+  protected final def s2(): Int = (in.nextByte.toInt << 8) | u1 // sign-extend and shift the first byte, or with the unsigned second byte
+
   private def readInnerClassFlags() = readClassFlags()
   private def readClassFlags()      = JavaAccFlags classFlags u2
   private def readMethodFlags()     = JavaAccFlags methodFlags u2
@@ -539,7 +542,7 @@ abstract class ClassfileParser {
             devWarning(s"no linked class for java enum $sym in ${sym.owner}. A referencing class file might be missing an InnerClasses entry.")
           case linked =>
             if (!linked.isSealed)
-              // Marking the enum class SEALED | ABSTRACT enables exhaustiveness checking.
+              // Marking the enum class SEALED | ABSTRACT enables exhaustiveness checking. See also JavaParsers.
               // This is a bit of a hack and requires excluding the ABSTRACT flag in the backend, see method javaClassfileFlags.
               linked setFlag (SEALED | ABSTRACT)
             linked addChild sym
@@ -813,6 +816,23 @@ abstract class ClassfileParser {
           val c1 = convertTo(c, symtype)
           if (c1 ne null) sym.setInfo(ConstantType(c1))
           else devWarning(s"failure to convert $c to $symtype")
+        case tpnme.MethodParametersATTR =>
+          def readParamNames(): Unit = {
+            import tools.asm.Opcodes.ACC_SYNTHETIC
+            val paramCount = u1
+            var i = 0
+            while (i < paramCount) {
+              val name = pool.getName(u2)
+              val access = u2
+              if ((access & ACC_SYNTHETIC) != ACC_SYNTHETIC) { // name not synthetic
+                val params = sym.paramss.head // Java only has exactly one parameter list
+                params(i).name = name.encode
+                params(i).resetFlag(SYNTHETIC)
+              }
+              i += 1
+            }
+          }
+          readParamNames()
         case tpnme.ScalaSignatureATTR =>
           if (!isScalaAnnot) {
             devWarning(s"symbol ${sym.fullName} has pickled signature in attribute")
@@ -862,7 +882,7 @@ abstract class ClassfileParser {
           srcfile0 = settings.outputDirs.srcFilesFor(in.file, srcpath).find(_.exists)
         case tpnme.CodeATTR =>
           if (sym.owner.isInterface) {
-            sym setFlag DEFAULTMETHOD
+            sym setFlag JAVA_DEFAULTMETHOD
             log(s"$sym in ${sym.owner} is a java8+ default method.")
           }
           in.skip(attrLen)

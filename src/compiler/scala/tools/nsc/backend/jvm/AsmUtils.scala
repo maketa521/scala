@@ -8,8 +8,9 @@ package scala.tools.nsc.backend.jvm
 import scala.tools.asm.tree.{InsnList, AbstractInsnNode, ClassNode, MethodNode}
 import java.io.{StringWriter, PrintWriter}
 import scala.tools.asm.util.{CheckClassAdapter, TraceClassVisitor, TraceMethodVisitor, Textifier}
-import scala.tools.asm.{ClassWriter, Attribute, ClassReader}
+import scala.tools.asm.{ClassReader, ClassWriter, Attribute}
 import scala.collection.convert.decorateAsScala._
+import scala.collection.convert.decorateAsJava._
 import scala.tools.nsc.backend.jvm.analysis.InitialProducer
 import scala.tools.nsc.backend.jvm.opt.InlineInfoAttributePrototype
 
@@ -53,6 +54,32 @@ object AsmUtils {
     val node = new ClassNode()
     new ClassReader(bytes).accept(node, Array[Attribute](InlineInfoAttributePrototype), 0)
     node
+  }
+
+  def readClass(filename: String): ClassNode = readClass(classBytes(filename))
+
+  def classBytes(file: String): Array[Byte] = {
+    val f = new java.io.RandomAccessFile(file, "r")
+    val bytes = new Array[Byte](f.length.toInt)
+    f.read(bytes)
+    bytes
+  }
+
+  def textifyClassStably(bytes: Array[Byte]): Unit = {
+    val node = new ClassNode()
+    new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
+
+    node.fields  = node.fields.asScala.sortBy(_.name).asJava
+    node.methods = node.methods.asScala.sortBy(_.name).asJava
+    node.visibleAnnotations = null
+    node.attrs = null
+    node.invisibleAnnotations = null
+
+    println(textify(node))
+  }
+
+  def main(args: Array[String]): Unit = {
+    textifyClassStably(classBytes(args.head))
   }
 
   /**
@@ -115,12 +142,12 @@ object AsmUtils {
    * Run ASM's CheckClassAdapter over a class. Returns None if no problem is found, otherwise
    * Some(msg) with the verifier's error message.
    */
-  def checkClass(classNode: ClassNode): Option[String] = {
+  def checkClass(classNode: ClassNode, dumpNonErroneous: Boolean = false): Option[String] = {
     val cw = new ClassWriter(ClassWriter.COMPUTE_MAXS)
     classNode.accept(cw)
     val sw = new StringWriter()
     val pw = new PrintWriter(sw)
-    CheckClassAdapter.verify(new ClassReader(cw.toByteArray), false, pw)
+    CheckClassAdapter.verify(new ClassReader(cw.toByteArray), dumpNonErroneous, pw)
     val res = sw.toString
     if (res.isEmpty) None else Some(res)
   }

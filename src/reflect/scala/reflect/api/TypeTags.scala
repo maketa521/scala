@@ -7,8 +7,6 @@ package scala
 package reflect
 package api
 
-import java.lang.{ Class => jClass }
-import scala.language.implicitConversions
 import java.io.ObjectStreamException
 
 /**
@@ -53,7 +51,7 @@ import java.io.ObjectStreamException
  * Each of these methods constructs a `TypeTag[T]` or `ClassTag[T]` for the given
  * type argument `T`.
  *
- * === #2 Using an implicit parameter of type `TypeTag[T]`, `ClassTag[T]`, or `WeakTypeTag[T]
+ * === #2 Using an implicit parameter of type `TypeTag[T]`, `ClassTag[T]`, or `WeakTypeTag[T]`
  *
  * For example:
  * {{{

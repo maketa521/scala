@@ -1,7 +1,7 @@
 package scala.tools.nsc
 package backend.jvm
 
-import scala.tools.asm.tree.{InvokeDynamicInsnNode, AbstractInsnNode, MethodNode}
+import scala.tools.asm.tree.{AbstractInsnNode, MethodNode}
 import scala.tools.nsc.backend.jvm.BTypes.InternalName
 import scala.reflect.internal.util.Position
 import scala.tools.nsc.settings.ScalaSettings
@@ -44,7 +44,7 @@ object BackendReporting {
   implicit class RightBiasedEither[A, B](val v: Either[A, B]) extends AnyVal {
     def map[U](f: B => U) = v.right.map(f)
     def flatMap[BB](f: B => Either[A, BB]) = v.right.flatMap(f)
-    def filter(f: B => Boolean)(implicit empty: A): Either[A, B] = v match {
+    def withFilter(f: B => Boolean)(implicit empty: A): Either[A, B] = v match {
       case Left(_)  => v
       case Right(e) => if (f(e)) v else Left(empty) // scalaz.\/ requires an implicit Monoid m to get m.empty
     }
@@ -86,8 +86,8 @@ object BackendReporting {
     def emitWarning(settings: ScalaSettings): Boolean
   }
 
-  // Method filter in RightBiasedEither requires an implicit empty value. Taking the value here
-  // in scope allows for-comprehensions that desugar into filter calls (for example when using a
+  // Method withFilter in RightBiasedEither requires an implicit empty value. Taking the value here
+  // in scope allows for-comprehensions that desugar into withFilter calls (for example when using a
   // tuple de-constructor).
   implicit object emptyOptimizerWarning extends OptimizerWarning {
     def emitWarning(settings: ScalaSettings): Boolean = false
@@ -170,9 +170,6 @@ object BackendReporting {
 
       case MethodInlineInfoError(_, _, _, cause) =>
         s"Error while computing the inline information for method $warningMessageSignature:\n" + cause
-
-      case RewriteTraitCallToStaticImplMethodFailed(_, _, _, cause) =>
-        cause.toString
     }
 
     def emitWarning(settings: ScalaSettings): Boolean = this match {
@@ -182,15 +179,12 @@ object BackendReporting {
       case MethodInlineInfoMissing(_, _, _, None)                   => settings.YoptWarningNoInlineMissingBytecode
 
       case MethodInlineInfoError(_, _, _, cause)                    => cause.emitWarning(settings)
-
-      case RewriteTraitCallToStaticImplMethodFailed(_, _, _, cause) => cause.emitWarning(settings)
     }
   }
 
   case class MethodInlineInfoIncomplete(declarationClass: InternalName, name: String, descriptor: String, cause: ClassInlineInfoWarning) extends CalleeInfoWarning
   case class MethodInlineInfoMissing(declarationClass: InternalName, name: String, descriptor: String, cause: Option[ClassInlineInfoWarning]) extends CalleeInfoWarning
   case class MethodInlineInfoError(declarationClass: InternalName, name: String, descriptor: String, cause: NoClassBTypeInfo) extends CalleeInfoWarning
-  case class RewriteTraitCallToStaticImplMethodFailed(declarationClass: InternalName, name: String, descriptor: String, cause: OptimizerWarning) extends CalleeInfoWarning
 
   sealed trait CannotInlineWarning extends OptimizerWarning {
     def calleeDeclarationClass: InternalName
@@ -228,7 +222,7 @@ object BackendReporting {
 
     def emitWarning(settings: ScalaSettings): Boolean = this match {
       case _: IllegalAccessInstruction | _: MethodWithHandlerCalledOnNonEmptyStack | _: SynchronizedMethod | _: StrictfpMismatch | _: ResultingMethodTooLarge =>
-        settings.YoptWarningEmitAtInlineFailed
+        settings.YoptWarnings.contains(settings.YoptWarningsChoices.anyInlineFailed)
 
       case IllegalAccessCheckFailed(_, _, _, _, _, cause) =>
         cause.emitWarning(settings)
@@ -246,9 +240,11 @@ object BackendReporting {
   case class ResultingMethodTooLarge(calleeDeclarationClass: InternalName, name: String, descriptor: String,
                                      callsiteClass: InternalName, callsiteName: String, callsiteDesc: String) extends CannotInlineWarning
 
+  // TODO: this should be a subtype of CannotInlineWarning
+  // but at the place where it's created (in findIllegalAccess) we don't have the necessary data (calleeName, calleeDescriptor).
   case object UnknownInvokeDynamicInstruction extends OptimizerWarning {
     override def toString = "The callee contains an InvokeDynamic instruction with an unknown bootstrap method (not a LambdaMetaFactory)."
-    def emitWarning(settings: ScalaSettings): Boolean = settings.YoptWarningEmitAtInlineFailed
+    def emitWarning(settings: ScalaSettings): Boolean = settings.YoptWarnings.contains(settings.YoptWarningsChoices.anyInlineFailed)
   }
 
   /**
@@ -260,7 +256,7 @@ object BackendReporting {
 
     override def emitWarning(settings: ScalaSettings): Boolean = this match {
       case RewriteClosureAccessCheckFailed(_, cause) => cause.emitWarning(settings)
-      case RewriteClosureIllegalAccess(_, _)         => settings.YoptWarningEmitAtInlineFailed
+      case RewriteClosureIllegalAccess(_, _)         => settings.YoptWarnings.contains(settings.YoptWarningsChoices.anyInlineFailed)
     }
 
     override def toString: String = this match {
@@ -285,7 +281,7 @@ object BackendReporting {
         s"Failed to get the type of a method of class symbol $classFullName due to SI-9111."
 
       case ClassNotFoundWhenBuildingInlineInfoFromSymbol(missingClass) =>
-        s"Failed to build the inline information: $missingClass."
+        s"Failed to build the inline information: $missingClass"
 
       case UnknownScalaInlineInfoVersion(internalName, version) =>
         s"Cannot read ScalaInlineInfo version $version in classfile $internalName. Use a more recent compiler."

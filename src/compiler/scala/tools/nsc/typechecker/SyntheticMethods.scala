@@ -6,10 +6,12 @@
 package scala.tools.nsc
 package typechecker
 
-import scala.collection.{ mutable, immutable }
-import symtab.Flags._
-import scala.collection.mutable.ListBuffer
 import scala.language.postfixOps
+
+import scala.collection.mutable
+import scala.collection.mutable.ListBuffer
+
+import symtab.Flags._
 
 /** Synthetic method implementations for case classes and case objects.
  *
@@ -304,6 +306,7 @@ trait SyntheticMethods extends ast.TreeDSL {
          clazz.isModuleClass
       && clazz.isSerializable
       && !hasConcreteImpl(nme.readResolve)
+      && clazz.isStatic
     )
 
     def synthesize(): List[Tree] = {
@@ -335,16 +338,18 @@ trait SyntheticMethods extends ast.TreeDSL {
         }
         for ((m, impl) <- methods ; if shouldGenerate(m)) yield impl()
       }
-      def extras = (
+      def extras = {
         if (needsReadResolve) {
           // Aha, I finally decoded the original comment.
           // This method should be generated as private, but apparently if it is, then
           // it is name mangled afterward.  (Wonder why that is.) So it's only protected.
           // For sure special methods like "readResolve" should not be mangled.
-          List(createMethod(nme.readResolve, Nil, ObjectTpe)(m => { m setFlag PRIVATE ; REF(clazz.sourceModule) }))
+          List(createMethod(nme.readResolve, Nil, ObjectTpe)(m => {
+            m setFlag PRIVATE; REF(clazz.sourceModule)
+          }))
         }
         else Nil
-      )
+      }
 
       try impls ++ extras
       catch { case _: TypeError if reporter.hasErrors => Nil }

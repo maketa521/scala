@@ -13,7 +13,6 @@ package mutable
 import generic._
 import immutable.{List, Nil, ::}
 import java.io.{ObjectOutputStream, ObjectInputStream}
-import scala.annotation.migration
 
 /** A `Buffer` implementation backed by a list. It provides constant time
  *  prepend and append. Most other operations are linear.
@@ -47,7 +46,7 @@ final class ListBuffer[A]
          with Buffer[A]
          with GenericTraversableTemplate[A, ListBuffer]
          with BufferLike[A, ListBuffer[A]]
-         with Builder[A, List[A]]
+         with ReusableBuilder[A, List[A]]
          with SeqForwarder[A]
          with Serializable
 {
@@ -262,13 +261,14 @@ final class ListBuffer[A]
    *
    *  @param n         the index which refers to the first element to remove.
    *  @param count     the number of elements to remove.
+   *  @throws   IndexOutOfBoundsException if the index `n` is not in the valid range
+   *            `0 <= n <= length - count` (with `count > 0`).
+   *  @throws   IllegalArgumentException if `count < 0`.
    */
-  @migration("Invalid input values will be rejected in future releases.", "2.11")
   override def remove(n: Int, count: Int) {
-    if (n >= len)
-      return
-    if (count < 0)
-      throw new IllegalArgumentException(s"removing negative number ($count) of elements")
+    if (count < 0) throw new IllegalArgumentException("removing negative number of elements: " + count.toString)
+    else if (count == 0) return  // Nothing to do
+    if (n < 0 || n > len - count) throw new IndexOutOfBoundsException("at " + n.toString + " deleting " + count.toString)
     if (exported) copy()
     val n1 = n max 0
     val count1 = count min (len - n1)
@@ -297,6 +297,10 @@ final class ListBuffer[A]
 
 // Implementation of abstract method in Builder
 
+  /** Returns the accumulated `List`.
+   *
+   *  This method may be called multiple times to obtain snapshots of the list in different stages of construction.
+   */
   def result: List[A] = toList
 
   /** Converts this buffer to a list. Takes constant time. The buffer is
